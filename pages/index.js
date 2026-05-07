@@ -393,4 +393,63 @@ export default function App() {
                 ) : (
                   <div style={{ fontSize: 14, color: "#e2e8f0" }}>
                     Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>${Math.abs(peterOwes).toFixed(2)}</span>
-  
+                  </div>
+                )}
+              </div>
+
+              {/* By type breakdown */}
+              <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
+                <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category (USD)</div>
+                {TYPES.map(t => {
+                  const items = usdBookings.filter(b => b.type === t.id);
+                  const total = items.reduce((s, b) => s + parseFloat(b.price), 0);
+                  if (total === 0) return null;
+                  return (
+                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                      <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
+                      <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>${total.toFixed(2)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ textAlign: "center", marginTop: 48, color: "#1a1f2e", fontSize: 11, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em" }}>
+            PETER + 1 · BEIJING → YUNNAN → ZHANGJIAJIE → INCHEON
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function Meta({ label, value, highlight, mono }) {
+  return (
+    <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+      <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+      <span style={{ fontSize: 12.5, color: highlight ? "#10b981" : "#94a3b8", fontFamily: mono ? "'Source Code Pro', monospace" : "'Georgia', serif" }}>{value}</span>
+    </span>
+  );
+}
+
+function SummaryCard({ label, value, color, sub }) {
+  return (
+    <div style={{ background: "#151820", borderRadius: 8, padding: "16px 20px", border: "1px solid #1e2533" }}>
+      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 24, fontFamily: "'Playfair Display', serif", color, marginBottom: 4 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
+    </div>
+  );
+}
+
+const inp = {
+  width: "100%", background: "#0f1117", border: "1px solid #1e2533",
+  borderRadius: 6, padding: "9px 12px", color: "#e2e8f0",
+  fontSize: 13, fontFamily: "'Source Code Pro', monospace",
+};
+
+const btnStyle = {
+  padding: "8px 16px", borderRadius: 6, fontSize: 12,
+  fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em",
+};
