@@ -14,7 +14,7 @@ const TYPES = [
   { id: "ticket", label: "Ticket", color: "#f97316", icon: "🎟" },
 ];
 
-const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND"];
+const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
 
 const EMPTY_FORM = {
   type: "flight",
@@ -126,17 +126,19 @@ export default function App() {
 
   const filtered = filterType === "all" ? bookings : bookings.filter(b => b.type === filterType);
 
-  // Summary calcs (USD only for simplicity)
-  const usdBookings = bookings.filter(b => b.currency === "USD" && b.price);
-  const totalUSD = usdBookings.reduce((s, b) => s + parseFloat(b.price), 0);
-  const peterTotal = usdBookings.reduce((s, b) => s + peterShare(b), 0);
-  const friendTotal = usdBookings.reduce((s, b) => s + friendShare(b), 0);
+  // Summary calcs — grouped by currency
+  const activeCurrencies = [...new Set(bookings.filter(b => b.price && b.currency).map(b => b.currency))].sort();
 
-  // Who paid what
-  const peterPaid = usdBookings.filter(b => b.paid_by === "peter").reduce((s, b) => s + parseFloat(b.price), 0);
-  const friendPaid = usdBookings.filter(b => b.paid_by === "friend").reduce((s, b) => s + parseFloat(b.price), 0);
-  const peterOwes = peterTotal - peterPaid;   // negative = friend owes Peter
-  const friendOwes = friendTotal - friendPaid;
+  function calcForCurrency(currency) {
+    const bks = bookings.filter(b => b.currency === currency && b.price);
+    const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
+    const pTotal = bks.reduce((s, b) => s + peterShare(b), 0);
+    const fTotal = bks.reduce((s, b) => s + friendShare(b), 0);
+    const pPaid = bks.filter(b => b.paid_by === "peter").reduce((s, b) => s + parseFloat(b.price), 0);
+    const fPaid = bks.filter(b => b.paid_by === "friend").reduce((s, b) => s + parseFloat(b.price), 0);
+    const pOwes = pTotal - pPaid; // negative = friend owes Peter
+    return { total, pTotal, fTotal, pPaid, fPaid, pOwes, count: bks.length };
+  }
 
   return (
     <>
@@ -368,50 +370,61 @@ export default function App() {
 
           {/* SUMMARY TAB */}
           {activeTab === "summary" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", marginBottom: 4 }}>
-                USD ITEMS ONLY — OTHER CURRENCIES EXCLUDED FROM SPLIT CALC
-              </div>
-
-              {/* Total */}
-              <SummaryCard label="Total spend" value={`$${totalUSD.toFixed(2)}`} color="#e2e8f0" sub={`${usdBookings.length} items`} />
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <SummaryCard label="Peter's share" value={`$${peterTotal.toFixed(2)}`} color="#0ea5e9" sub={`Paid $${peterPaid.toFixed(2)}`} />
-                <SummaryCard label="Friend's share" value={`$${friendTotal.toFixed(2)}`} color="#8b5cf6" sub={`Paid $${friendPaid.toFixed(2)}`} />
-              </div>
-
-              {/* Settlement */}
-              <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
-                <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
-                {Math.abs(peterOwes) < 0.01 ? (
-                  <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
-                ) : peterOwes > 0 ? (
-                  <div style={{ fontSize: 14, color: "#e2e8f0" }}>
-                    Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>${peterOwes.toFixed(2)}</span>
-                  </div>
-                ) : (
-                  <div style={{ fontSize: 14, color: "#e2e8f0" }}>
-                    Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>${Math.abs(peterOwes).toFixed(2)}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* By type breakdown */}
-              <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
-                <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category (USD)</div>
-                {TYPES.map(t => {
-                  const items = usdBookings.filter(b => b.type === t.id);
-                  const total = items.reduce((s, b) => s + parseFloat(b.price), 0);
-                  if (total === 0) return null;
-                  return (
-                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
-                      <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>${total.toFixed(2)}</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              {activeCurrencies.length === 0 && (
+                <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>
+              )}
+              {activeCurrencies.map(currency => {
+                const { total, pTotal, fTotal, pPaid, fPaid, pOwes, count } = calcForCurrency(currency);
+                const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
+                const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
+                return (
+                  <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>
+                      ── {currency} ─────────────────────────
                     </div>
-                  );
-                })}
-              </div>
+
+                    <SummaryCard label="Total spend" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}`} />
+
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                      <SummaryCard label="Peter's share" value={fmt2(pTotal)} color="#0ea5e9" sub={`Paid ${fmt2(pPaid)}`} />
+                      <SummaryCard label="Friend's share" value={fmt2(fTotal)} color="#8b5cf6" sub={`Paid ${fmt2(fPaid)}`} />
+                    </div>
+
+                    {/* Settlement */}
+                    <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
+                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
+                      {Math.abs(pOwes) < 0.01 ? (
+                        <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
+                      ) : pOwes > 0 ? (
+                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                          Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span>
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                          Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* By category */}
+                    <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
+                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
+                      {TYPES.map(t => {
+                        const items = bookings.filter(b => b.currency === currency && b.price && b.type === t.id);
+                        const catTotal = items.reduce((s, b) => s + parseFloat(b.price), 0);
+                        if (catTotal === 0) return null;
+                        return (
+                          <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                            <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
+                            <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(catTotal)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
