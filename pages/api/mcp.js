@@ -18,7 +18,7 @@ const TOOLS = [
         name: { type: "string", description: "Name / description of the booking" },
         date: { type: "string", description: "Date in YYYY-MM-DD format" },
         price: { type: "number", description: "Price as a number" },
-        currency: { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND"], description: "Currency — defaults to USD" },
+        currency: { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency — defaults to USD" },
         platform: { type: "string", description: "Booking platform e.g. Trip.com, Klook" },
         reference: { type: "string", description: "Booking reference or flight number(s)" },
         notes: { type: "string", description: "Extra details — timings, room type, etc." },
