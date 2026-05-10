@@ -26,7 +26,7 @@ const EMPTY_FORM = {
   reference: "",
   notes: "",
   travelers: "both",
-  paid_by: "peter",
+  paid_by: "",
 };
 
 function fmt(price, currency) {
@@ -111,11 +111,16 @@ export default function App() {
       reference: b.reference || "",
       notes: b.notes || "",
       travelers: b.travelers || "both",
-      paid_by: b.paid_by || "peter",
+      paid_by: b.paid_by || "",
     });
     setEditId(b.id);
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function handleSettle(id) {
+    await supabase.from("bookings").update({ settled: true }).eq("id", id);
+    await fetchBookings();
   }
 
   function handleCancel() {
@@ -131,13 +136,17 @@ export default function App() {
 
   function calcForCurrency(currency) {
     const bks = bookings.filter(b => b.currency === currency && b.price);
+    const paid = bks.filter(b => b.paid_by);
+    const pending = bks.filter(b => !b.paid_by);
     const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pTotal = bks.reduce((s, b) => s + peterShare(b), 0);
-    const fTotal = bks.reduce((s, b) => s + friendShare(b), 0);
-    const pPaid = bks.filter(b => b.paid_by === "peter").reduce((s, b) => s + parseFloat(b.price), 0);
-    const fPaid = bks.filter(b => b.paid_by === "friend").reduce((s, b) => s + parseFloat(b.price), 0);
-    const pOwes = pTotal - pPaid; // negative = friend owes Peter
-    return { total, pTotal, fTotal, pPaid, fPaid, pOwes, count: bks.length };
+    const pendingTotal = pending.reduce((s, b) => s + parseFloat(b.price), 0);
+    // Settlement: per-item net position, excluding settled items
+    const pOwes = paid.filter(b => !b.settled).reduce((s, b) => {
+      const fronted = b.paid_by === "peter" ? parseFloat(b.price) : 0;
+      return s + peterShare(b) - fronted;
+    }, 0);
+    const settledCount = paid.filter(b => b.settled).length;
+    return { total, pendingTotal, pOwes, count: bks.length, pendingCount: pending.length, settledCount };
   }
 
   return (
@@ -257,7 +266,7 @@ export default function App() {
                   ))}
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
                   {["peter", "friend"].map(v => (
-                    <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))} style={{
+                    <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: f.paid_by === v ? "" : v }))} style={{
                       padding: "5px 12px", borderRadius: 5, fontSize: 11,
                       fontFamily: "'Source Code Pro', monospace",
                       border: `1.5px solid ${form.paid_by === v ? "#10b981" : "#1e2533"}`,
@@ -265,6 +274,9 @@ export default function App() {
                       color: form.paid_by === v ? "#10b981" : "#4b5563",
                     }}>{v}</button>
                   ))}
+                  {!form.paid_by && (
+                    <span style={{ fontSize: 11, color: "#f59e0b", fontFamily: "'Source Code Pro', monospace" }}>⏳ pending</span>
+                  )}
                 </div>
 
                 <div style={{ gridColumn: "1 / -1" }}>
@@ -323,10 +335,16 @@ export default function App() {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                     return (
                       <div key={b.id} className="card" style={{
-                        background: "#12151e", borderRadius: 8, padding: "14px 16px",
-                        borderLeft: `3px solid ${t.color}`, position: "relative",
+                        background: b.paid_by ? "#12151e" : "#0e1018",
+                        borderRadius: 8, padding: "14px 16px",
+                        borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`,
+                        position: "relative",
+                        opacity: b.paid_by ? 1 : 0.75,
                       }}>
                         <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
+                          {b.paid_by && b.travelers === "both" && !b.settled && (
+                            <button className="btn" onClick={() => handleSettle(b.id)} style={{ background: "transparent", color: "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: "1px solid #10b98140", borderRadius: 4 }}>settle ✓</button>
+                          )}
                           <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "#64748b", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
                           {deleteConfirm === b.id ? (
                             <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -344,6 +362,16 @@ export default function App() {
                             background: `${t.color}18`, padding: "2px 7px", borderRadius: 4,
                             letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap",
                           }}>{t.icon} {t.label}</span>
+                          {!b.paid_by && (
+                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                              ⏳ pending
+                            </span>
+                          )}
+                          {b.settled && (
+                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                              ✓ settled
+                            </span>
+                          )}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
 
@@ -353,7 +381,10 @@ export default function App() {
                           {b.platform && <Meta label="via" value={b.platform} />}
                           {b.reference && <Meta label="ref" value={b.reference} mono />}
                           <Meta label="travelers" value={b.travelers || "both"} />
-                          {b.paid_by && <Meta label="paid by" value={b.paid_by} />}
+                          {b.paid_by
+                            ? <Meta label="paid by" value={b.paid_by} />
+                            : <Meta label="paid by" value="—" />
+                          }
                         </div>
                         {b.notes && (
                           <div style={{ marginTop: 8, fontSize: 12.5, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>
@@ -384,12 +415,11 @@ export default function App() {
                       ── {currency} ─────────────────────────
                     </div>
 
-                    <SummaryCard label="Total spend" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}`} />
+                    <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
 
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                      <SummaryCard label="Peter's share" value={fmt2(pTotal)} color="#0ea5e9" sub={`Paid ${fmt2(pPaid)}`} />
-                      <SummaryCard label="Friend's share" value={fmt2(fTotal)} color="#8b5cf6" sub={`Paid ${fmt2(fPaid)}`} />
-                    </div>
+                    {pendingTotal > 0 && (
+                      <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />
+                    )}
 
                     {/* Settlement */}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
