@@ -53,6 +53,8 @@ const TOOLS = [
       required: ["id"],
     },
   },
+  {
+    name: "delete_booking",
     description: "Delete a booking by its ID",
     inputSchema: {
       type: "object",
