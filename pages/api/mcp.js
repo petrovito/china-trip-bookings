@@ -129,6 +129,7 @@ async function settle_booking(args) {
 }
 
 
+async function delete_booking(args) {
   const { error } = await supabase.from("bookings").delete().eq("id", args.id);
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   return { content: [{ type: "text", text: `✓ Booking ${args.id} deleted.` }] };
