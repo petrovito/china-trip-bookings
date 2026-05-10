@@ -43,7 +43,16 @@ const TOOLS = [
     },
   },
   {
-    name: "delete_booking",
+    name: "settle_booking",
+    description: "Mark a specific booking as settled — i.e. the other person has paid back their share",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The UUID of the booking to mark as settled" },
+      },
+      required: ["id"],
+    },
+  },
     description: "Delete a booking by its ID",
     inputSchema: {
       type: "object",
@@ -111,7 +120,13 @@ async function list_bookings(args) {
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${lines.join("\n")}` }] };
 }
 
-async function delete_booking(args) {
+async function settle_booking(args) {
+  const { error } = await supabase.from("bookings").update({ settled: true }).eq("id", args.id);
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Booking ${args.id} marked as settled.` }] };
+}
+
+
   const { error } = await supabase.from("bookings").delete().eq("id", args.id);
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   return { content: [{ type: "text", text: `✓ Booking ${args.id} deleted.` }] };
@@ -156,6 +171,7 @@ export default async function handler(req, res) {
         let result;
         if (name === "add_booking") result = await add_booking(args);
         else if (name === "list_bookings") result = await list_bookings(args);
+        else if (name === "settle_booking") result = await settle_booking(args);
         else if (name === "delete_booking") result = await delete_booking(args);
         else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
         return res.json({ jsonrpc: "2.0", id, result });
