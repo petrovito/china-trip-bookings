@@ -6,7 +6,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// ── Tool definitions ────────────────────────────────────────────────────────
 const TOOLS = [
   {
     name: "add_booking",
@@ -34,11 +33,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: {
-          type: "string",
-          enum: ["flight", "hotel", "train", "ticket", "all"],
-          description: "Filter by type — omit for all",
-        },
+        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "all"], description: "Filter by type — omit for all" },
       },
     },
   },
@@ -66,7 +61,6 @@ const TOOLS = [
   },
 ];
 
-// ── Tool handlers ───────────────────────────────────────────────────────────
 async function add_booking(args) {
   const { data, error } = await supabase
     .from("bookings")
@@ -128,14 +122,12 @@ async function settle_booking(args) {
   return { content: [{ type: "text", text: `✓ Booking ${args.id} marked as settled.` }] };
 }
 
-
 async function delete_booking(args) {
   const { error } = await supabase.from("bookings").delete().eq("id", args.id);
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   return { content: [{ type: "text", text: `✓ Booking ${args.id} deleted.` }] };
 }
 
-// ── Main handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
@@ -158,16 +150,12 @@ export default async function handler(req, res) {
             serverInfo: { name: "china-trip-bookings", version: "1.0.0" },
           },
         });
-
       case "notifications/initialized":
         return res.status(204).end();
-
       case "ping":
         return res.json({ jsonrpc: "2.0", id, result: {} });
-
       case "tools/list":
         return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
-
       case "tools/call": {
         const name = params?.name;
         const args = params?.arguments ?? {};
@@ -179,17 +167,10 @@ export default async function handler(req, res) {
         else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
         return res.json({ jsonrpc: "2.0", id, result });
       }
-
       default:
-        return res.status(400).json({
-          jsonrpc: "2.0", id,
-          error: { code: -32601, message: `Method not found: ${method}` },
-        });
+        return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
     }
   } catch (e) {
-    return res.status(500).json({
-      jsonrpc: "2.0", id,
-      error: { code: -32603, message: e.message },
-    });
+    return res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32603, message: e.message } });
   }
 }
