@@ -59,7 +59,7 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [activeTab, setActiveTab] = useState("bookings"); // bookings | summary
+  const [activeTab, setActiveTab] = useState("bookings");
 
   useEffect(() => { fetchBookings(); }, []);
 
@@ -131,7 +131,6 @@ export default function App() {
 
   const filtered = filterType === "all" ? bookings : bookings.filter(b => b.type === filterType);
 
-  // Summary calcs — grouped by currency
   const activeCurrencies = [...new Set(bookings.filter(b => b.price && b.currency).map(b => b.currency))].sort();
 
   function calcForCurrency(currency) {
@@ -140,7 +139,6 @@ export default function App() {
     const pending = bks.filter(b => !b.paid_by);
     const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
     const pendingTotal = pending.reduce((s, b) => s + parseFloat(b.price), 0);
-    // Settlement: per-item net position, excluding settled items
     const pOwes = paid.filter(b => !b.settled).reduce((s, b) => {
       const fronted = b.paid_by === "peter" ? parseFloat(b.price) : 0;
       return s + peterShare(b) - fronted;
@@ -170,7 +168,6 @@ export default function App() {
       <div style={{ minHeight: "100vh", padding: "32px 20px 80px" }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
 
-          {/* Header */}
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 8, textTransform: "uppercase" }}>
               China Trip · Jun 8–27, 2026
@@ -188,7 +185,6 @@ export default function App() {
               )}
             </div>
 
-            {/* Tabs */}
             <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid #1e2533" }}>
               {["bookings", "summary"].map(tab => (
                 <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{
@@ -204,14 +200,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* Form */}
           {showForm && (
             <div style={{ background: "#151820", borderRadius: 10, padding: 20, marginBottom: 24, border: "1px solid #1e2533" }}>
               <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 {editId ? "Edit booking" : "New booking"}
               </div>
 
-              {/* Type */}
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                 {TYPES.map(t => (
                   <button key={t.id} className="btn" onClick={() => setForm(f => ({ ...f, type: t.id }))} style={{
@@ -252,7 +246,6 @@ export default function App() {
                   onChange={e => setForm(f => ({ ...f, reference: e.target.value }))}
                   style={inp} />
 
-                {/* Travelers */}
                 <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
                   {["peter", "friend", "both"].map(v => (
@@ -265,18 +258,15 @@ export default function App() {
                     }}>{v}</button>
                   ))}
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
-                  {["peter", "friend"].map(v => (
-                    <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: f.paid_by === v ? "" : v }))} style={{
+                  {[{ v: "peter", label: "peter" }, { v: "friend", label: "friend" }, { v: "", label: "⏳ unpaid" }].map(({ v, label }) => (
+                    <button key={label} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))} style={{
                       padding: "5px 12px", borderRadius: 5, fontSize: 11,
                       fontFamily: "'Source Code Pro', monospace",
-                      border: `1.5px solid ${form.paid_by === v ? "#10b981" : "#1e2533"}`,
-                      background: form.paid_by === v ? "#10b98120" : "transparent",
-                      color: form.paid_by === v ? "#10b981" : "#4b5563",
-                    }}>{v}</button>
+                      border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#1e2533"}`,
+                      background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent",
+                      color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#4b5563",
+                    }}>{label}</button>
                   ))}
-                  {!form.paid_by && (
-                    <span style={{ fontSize: 11, color: "#f59e0b", fontFamily: "'Source Code Pro', monospace" }}>⏳ pending</span>
-                  )}
                 </div>
 
                 <div style={{ gridColumn: "1 / -1" }}>
@@ -296,10 +286,8 @@ export default function App() {
             </div>
           )}
 
-          {/* BOOKINGS TAB */}
           {activeTab === "bookings" && (
             <>
-              {/* Filters */}
               {bookings.length > 0 && (
                 <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
                   {["all", ...TYPES.map(t => t.id)].map(f => {
@@ -381,10 +369,7 @@ export default function App() {
                           {b.platform && <Meta label="via" value={b.platform} />}
                           {b.reference && <Meta label="ref" value={b.reference} mono />}
                           <Meta label="travelers" value={b.travelers || "both"} />
-                          {b.paid_by
-                            ? <Meta label="paid by" value={b.paid_by} />
-                            : <Meta label="paid by" value="—" />
-                          }
+                          {b.paid_by ? <Meta label="paid by" value={b.paid_by} /> : <Meta label="paid by" value="—" />}
                         </div>
                         {b.notes && (
                           <div style={{ marginTop: 8, fontSize: 12.5, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>
@@ -399,14 +384,13 @@ export default function App() {
             </>
           )}
 
-          {/* SUMMARY TAB */}
           {activeTab === "summary" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {activeCurrencies.length === 0 && (
                 <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>
               )}
               {activeCurrencies.map(currency => {
-                const { total, pTotal, fTotal, pPaid, fPaid, pOwes, count } = calcForCurrency(currency);
+                const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
                 const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
@@ -414,14 +398,10 @@ export default function App() {
                     <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>
                       ── {currency} ─────────────────────────
                     </div>
-
                     <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
-
                     {pendingTotal > 0 && (
                       <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />
                     )}
-
-                    {/* Settlement */}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
                       <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
                       {Math.abs(pOwes) < 0.01 ? (
@@ -436,8 +416,6 @@ export default function App() {
                         </div>
                       )}
                     </div>
-
-                    {/* By category */}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
                       <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
                       {TYPES.map(t => {
