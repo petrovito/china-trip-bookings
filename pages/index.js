@@ -16,8 +16,6 @@ const TYPES = [
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
 
-const BUILD = "2026-05-18";
-
 const EMPTY_FORM = {
   type: "flight",
   name: "",
@@ -70,7 +68,10 @@ export default function App() {
 
   async function fetchBookings() {
     setLoading(true);
-    const { data } = await supabase.from("bookings").select("*").order("date", { ascending: true });
+    const { data } = await supabase
+      .from("bookings")
+      .select("*")
+      .order("date", { ascending: true });
     setBookings(data || []);
     setLoading(false);
   }
@@ -78,21 +79,46 @@ export default function App() {
   async function handleSubmit() {
     if (!form.name) return;
     setSaving(true);
-    const payload = { ...form, price: form.price ? parseFloat(form.price) : null, date: form.date || null, paid_by: form.paid_by || null };
-    if (editId) { await supabase.from("bookings").update(payload).eq("id", editId); }
-    else { await supabase.from("bookings").insert(payload); }
+    const payload = {
+      ...form,
+      price: form.price ? parseFloat(form.price) : null,
+      date: form.date || null,
+      paid_by: form.paid_by || null,
+    };
+    if (editId) {
+      await supabase.from("bookings").update(payload).eq("id", editId);
+    } else {
+      await supabase.from("bookings").insert(payload);
+    }
     await fetchBookings();
-    setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
+    setForm(EMPTY_FORM);
+    setShowForm(false);
+    setEditId(null);
+    setSaving(false);
   }
 
   async function handleDelete(id) {
     await supabase.from("bookings").delete().eq("id", id);
-    setDeleteConfirm(null); await fetchBookings();
+    setDeleteConfirm(null);
+    await fetchBookings();
   }
 
   function handleEdit(b) {
-    setForm({ type: b.type, name: b.name, date: b.date || "", price: b.price != null ? String(b.price) : "", currency: b.currency || "USD", platform: b.platform || "", reference: b.reference || "", notes: b.notes || "", travelers: b.travelers || "both", paid_by: b.paid_by || "" });
-    setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
+    setForm({
+      type: b.type,
+      name: b.name,
+      date: b.date || "",
+      price: b.price != null ? String(b.price) : "",
+      currency: b.currency || "USD",
+      platform: b.platform || "",
+      reference: b.reference || "",
+      notes: b.notes || "",
+      travelers: b.travelers || "both",
+      paid_by: b.paid_by || "",
+    });
+    setEditId(b.id);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSettle(id) {
@@ -100,7 +126,11 @@ export default function App() {
     await fetchBookings();
   }
 
-  function handleCancel() { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); }
+  function handleCancel() {
+    setForm(EMPTY_FORM);
+    setShowForm(false);
+    setEditId(null);
+  }
 
   const filtered = bookings
     .filter(b => filterType === "all" || b.type === filterType)
@@ -150,14 +180,27 @@ export default function App() {
               China Trip · Jun 8–27, 2026
             </div>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Bookings</h1>
+              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>
+                Bookings
+              </h1>
               {!showForm && (
-                <button className="btn" onClick={() => setShowForm(true)} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
+                <button className="btn" onClick={() => setShowForm(true)} style={{
+                  background: "#0ea5e9", color: "#fff", borderRadius: 6,
+                  padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace",
+                  letterSpacing: "0.05em", fontWeight: 500,
+                }}>+ Add</button>
               )}
             </div>
+
             <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid #1e2533" }}>
               {["bookings", "summary"].map(tab => (
-                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "#0ea5e9" : "#4b5563", borderBottom: activeTab === tab ? "2px solid #0ea5e9" : "2px solid transparent", marginBottom: -1 }}>
+                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{
+                  padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace",
+                  textTransform: "uppercase", letterSpacing: "0.08em",
+                  color: activeTab === tab ? "#0ea5e9" : "#4b5563",
+                  borderBottom: activeTab === tab ? "2px solid #0ea5e9" : "2px solid transparent",
+                  marginBottom: -1,
+                }}>
                   {tab}
                 </div>
               ))}
@@ -166,44 +209,79 @@ export default function App() {
 
           {showForm && (
             <div style={{ background: "#151820", borderRadius: 10, padding: 20, marginBottom: 24, border: "1px solid #1e2533" }}>
-              <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>{editId ? "Edit booking" : "New booking"}</div>
+              <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                {editId ? "Edit booking" : "New booking"}
+              </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                 {TYPES.map(t => (
-                  <button key={t.id} className="btn" onClick={() => setForm(f => ({ ...f, type: t.id }))} style={{ padding: "6px 12px", borderRadius: 5, border: `1.5px solid ${form.type === t.id ? t.color : "#1e2533"}`, background: form.type === t.id ? `${t.color}20` : "transparent", color: form.type === t.id ? t.color : "#4b5563", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>
+                  <button key={t.id} className="btn" onClick={() => setForm(f => ({ ...f, type: t.id }))} style={{
+                    padding: "6px 12px", borderRadius: 5,
+                    border: `1.5px solid ${form.type === t.id ? t.color : "#1e2533"}`,
+                    background: form.type === t.id ? `${t.color}20` : "transparent",
+                    color: form.type === t.id ? t.color : "#4b5563",
+                    fontSize: 12, fontFamily: "'Source Code Pro', monospace",
+                  }}>
                     {t.icon} {t.label}
                   </button>
                 ))}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <input placeholder="Name / description *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inp} />
+                  <input placeholder="Name / description *" value={form.name}
+                    onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                    style={inp} />
                 </div>
-                <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inp} />
+                <input type="date" value={form.date}
+                  onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
+                  style={inp} />
                 <div style={{ display: "flex", gap: 6 }}>
-                  <input placeholder="Price" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} style={{ ...inp, flex: 1 }} />
-                  <select value={form.currency} onChange={e => setForm(f => ({ ...f, currency: e.target.value }))} style={{ ...inp, width: 72 }}>
+                  <input placeholder="Price" value={form.price}
+                    onChange={e => setForm(f => ({ ...f, price: e.target.value }))}
+                    style={{ ...inp, flex: 1 }} />
+                  <select value={form.currency}
+                    onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}
+                    style={{ ...inp, width: 72 }}>
                     {CURRENCIES.map(c => <option key={c}>{c}</option>)}
                   </select>
                 </div>
-                <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
-                <input placeholder="Reference / confirmation #" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} style={inp} />
+                <input placeholder="Platform (e.g. Booking.com)" value={form.platform}
+                  onChange={e => setForm(f => ({ ...f, platform: e.target.value }))}
+                  style={inp} />
+                <input placeholder="Reference / confirmation #" value={form.reference}
+                  onChange={e => setForm(f => ({ ...f, reference: e.target.value }))}
+                  style={inp} />
                 <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
                   {["peter", "friend", "both"].map(v => (
-                    <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, travelers: v }))} style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.travelers === v ? "#e2e8f0" : "#1e2533"}`, background: form.travelers === v ? "#1e2533" : "transparent", color: form.travelers === v ? "#e2e8f0" : "#4b5563" }}>{v}</button>
+                    <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, travelers: v }))} style={{
+                      padding: "5px 12px", borderRadius: 5, fontSize: 11,
+                      fontFamily: "'Source Code Pro', monospace",
+                      border: `1.5px solid ${form.travelers === v ? "#e2e8f0" : "#1e2533"}`,
+                      background: form.travelers === v ? "#1e2533" : "transparent",
+                      color: form.travelers === v ? "#e2e8f0" : "#4b5563",
+                    }}>{v}</button>
                   ))}
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
                   {[{ v: "peter", label: "peter" }, { v: "friend", label: "friend" }, { v: "", label: "⏳ unpaid" }].map(({ v, label }) => (
-                    <button key={label} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))} style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#1e2533"}`, background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent", color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#4b5563" }}>{label}</button>
+                    <button key={label} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))} style={{
+                      padding: "5px 12px", borderRadius: 5, fontSize: 11,
+                      fontFamily: "'Source Code Pro', monospace",
+                      border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#1e2533"}`,
+                      background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent",
+                      color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#4b5563",
+                    }}>{label}</button>
                   ))}
                 </div>
                 <div style={{ gridColumn: "1 / -1" }}>
-                  <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inp, resize: "vertical" }} />
+                  <textarea placeholder="Notes" value={form.notes}
+                    onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                    rows={2} style={{ ...inp, resize: "vertical" }} />
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
                 <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "#6b7280", border: "1px solid #1e2533" }}>Cancel</button>
-                <button className="btn" onClick={handleSubmit} disabled={saving || !form.name} style={{ ...btnStyle, background: "#0ea5e9", color: "#fff", opacity: (!form.name || saving) ? 0.5 : 1 }}>
+                <button className="btn" onClick={handleSubmit} disabled={saving || !form.name}
+                  style={{ ...btnStyle, background: "#0ea5e9", color: "#fff", opacity: (!form.name || saving) ? 0.5 : 1 }}>
                   {saving ? "Saving..." : editId ? "Save changes" : "Add booking"}
                 </button>
               </div>
@@ -214,23 +292,66 @@ export default function App() {
             <>
               {bookings.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
-                  {[
-                    { label: "type", active: filterType, setActive: setFilterType, opts: [["all","all"], ...TYPES.map(t => [t.id, `${t.icon} ${t.label}`])], colorFn: v => TYPES.find(t=>t.id===v)?.color || "#e2e8f0" },
-                    { label: "for", active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend","friend"]], colorFn: () => "#e2e8f0" },
-                    { label: "paid", active: filterPaidBy, setActive: setFilterPaidBy, opts: [["all","all"],["peter","peter"],["friend","friend"],["pending","⏳ unpaid"]], colorFn: v => v === "pending" ? "#f59e0b" : "#10b981" },
-                    { label: "status", active: filterSettled, setActive: setFilterSettled, opts: [["all","all"],["unsettled","unsettled"],["settled","✓ settled"]], colorFn: v => v === "settled" ? "#10b981" : "#e2e8f0" },
-                  ].map(({ label, active, setActive, opts, colorFn }) => (
-                    <div key={label} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                      <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>{label}</span>
-                      {opts.map(([v, display]) => {
-                        const isActive = active === v;
-                        const color = colorFn(v);
-                        return (
-                          <button key={v} className="btn" onClick={() => setActive(v)} style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${isActive ? color : "#1e2533"}`, background: isActive ? `${color}18` : "transparent", color: isActive ? color : "#4b5563" }}>{display}</button>
-                        );
-                      })}
-                    </div>
-                  ))}
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>type</span>
+                    {["all", ...TYPES.map(t => t.id)].map(f => {
+                      const t = TYPES.find(t => t.id === f);
+                      const active = filterType === f;
+                      const count = f === "all" ? bookings.length : bookings.filter(b => b.type === f).length;
+                      return (
+                        <button key={f} className="btn" onClick={() => setFilterType(f)} style={{
+                          padding: "4px 10px", borderRadius: 5,
+                          border: `1px solid ${active ? (t?.color || "#e2e8f0") : "#1e2533"}`,
+                          background: active ? `${t?.color || "#e2e8f0"}15` : "transparent",
+                          color: active ? (t?.color || "#e2e8f0") : "#4b5563",
+                          fontSize: 11, fontFamily: "'Source Code Pro', monospace",
+                          textTransform: "uppercase", letterSpacing: "0.06em",
+                        }}>
+                          {f === "all" ? "all" : `${t.icon} ${t.label}`}
+                          <span style={{ marginLeft: 4, opacity: 0.4 }}>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>for</span>
+                    {[["all", "all"], ["both", "both"], ["peter", "peter"], ["friend", "friend"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterTravelers(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterTravelers === v ? "#e2e8f0" : "#1e2533"}`,
+                        background: filterTravelers === v ? "#1e253380" : "transparent",
+                        color: filterTravelers === v ? "#e2e8f0" : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>paid</span>
+                    {[["all", "all"], ["peter", "peter"], ["friend", "friend"], ["pending", "⏳ unpaid"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterPaidBy(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterPaidBy === v ? (v === "pending" ? "#f59e0b" : "#10b981") : "#1e2533"}`,
+                        background: filterPaidBy === v ? (v === "pending" ? "#f59e0b15" : "#10b98115") : "transparent",
+                        color: filterPaidBy === v ? (v === "pending" ? "#f59e0b" : "#10b981") : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>status</span>
+                    {[["all", "all"], ["unsettled", "unsettled"], ["settled", "✓ settled"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterSettled(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterSettled === v ? (v === "settled" ? "#10b981" : v === "unsettled" ? "#64748b" : "#e2e8f0") : "#1e2533"}`,
+                        background: filterSettled === v ? "#1e253380" : "transparent",
+                        color: filterSettled === v ? (v === "settled" ? "#10b981" : "#e2e8f0") : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -245,7 +366,13 @@ export default function App() {
                   {filtered.map(b => {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                     return (
-                      <div key={b.id} className="card" style={{ background: b.paid_by ? "#12151e" : "#0e1018", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
+                      <div key={b.id} className="card" style={{
+                        background: b.paid_by ? "#12151e" : "#0e1018",
+                        borderRadius: 8, padding: "14px 16px",
+                        borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`,
+                        position: "relative",
+                        opacity: b.paid_by ? 1 : 0.75,
+                      }}>
                         <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
                           {b.paid_by && b.travelers === "both" && !b.settled && (
                             <button className="btn" onClick={() => handleSettle(b.id)} style={{ background: "transparent", color: "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: "1px solid #10b98140", borderRadius: 4 }}>settle ✓</button>
@@ -261,9 +388,21 @@ export default function App() {
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
-                          <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
-                          {!b.paid_by && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
-                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
+                          <span style={{
+                            fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color,
+                            background: `${t.color}18`, padding: "2px 7px", borderRadius: 4,
+                            letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap",
+                          }}>{t.icon} {t.label}</span>
+                          {!b.paid_by && (
+                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                              ⏳ pending
+                            </span>
+                          )}
+                          {b.settled && (
+                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                              ✓ settled
+                            </span>
+                          )}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
@@ -274,7 +413,11 @@ export default function App() {
                           <Meta label="travelers" value={b.travelers || "both"} />
                           {b.paid_by ? <Meta label="paid by" value={b.paid_by} /> : <Meta label="paid by" value="—" />}
                         </div>
-                        {b.notes && <div style={{ marginTop: 8, fontSize: 12.5, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                        {b.notes && (
+                          <div style={{ marginTop: 8, fontSize: 12.5, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>
+                            {b.notes}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -285,30 +428,41 @@ export default function App() {
 
           {activeTab === "summary" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {activeCurrencies.length === 0 && <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>}
+              {activeCurrencies.length === 0 && (
+                <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>
+              )}
               {activeCurrencies.map(currency => {
                 const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
                 const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
                   <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>── {currency} ─────────────────────────</div>
+                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>
+                      ── {currency} ─────────────────────────
+                    </div>
                     <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
-                    {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
+                    {pendingTotal > 0 && (
+                      <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />
+                    )}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
                       <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
                       {Math.abs(pOwes) < 0.01 ? (
                         <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
                       ) : pOwes > 0 ? (
-                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span></div>
+                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                          Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span>
+                        </div>
                       ) : (
-                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span></div>
+                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                          Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span>
+                        </div>
                       )}
                     </div>
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
                       <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
                       {TYPES.map(t => {
-                        const catTotal = bookings.filter(b => b.currency === currency && b.price && b.type === t.id).reduce((s, b) => s + parseFloat(b.price), 0);
+                        const items = bookings.filter(b => b.currency === currency && b.price && b.type === t.id);
+                        const catTotal = items.reduce((s, b) => s + parseFloat(b.price), 0);
                         if (catTotal === 0) return null;
                         return (
                           <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -326,7 +480,6 @@ export default function App() {
 
           <div style={{ textAlign: "center", marginTop: 48, color: "#1a1f2e", fontSize: 11, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em" }}>
             PETER + 1 · BEIJING → YUNNAN → ZHANGJIAJIE → INCHEON
-            <br /><span style={{ fontSize: 10, opacity: 0.5 }}>updated {BUILD}</span>
           </div>
         </div>
       </div>
@@ -353,5 +506,13 @@ function SummaryCard({ label, value, color, sub }) {
   );
 }
 
-const inp = { width: "100%", background: "#0f1117", border: "1px solid #1e2533", borderRadius: 6, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "'Source Code Pro', monospace" };
-const btnStyle = { padding: "8px 16px", borderRadius: 6, fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" };
+const inp = {
+  width: "100%", background: "#0f1117", border: "1px solid #1e2533",
+  borderRadius: 6, padding: "9px 12px", color: "#e2e8f0",
+  fontSize: 13, fontFamily: "'Source Code Pro', monospace",
+};
+
+const btnStyle = {
+  padding: "8px 16px", borderRadius: 6, fontSize: 12,
+  fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em",
+};
