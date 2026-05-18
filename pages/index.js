@@ -54,6 +54,9 @@ export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState("all");
+  const [filterSettled, setFilterSettled] = useState("all");
+  const [filterTravelers, setFilterTravelers] = useState("all");
+  const [filterPaidBy, setFilterPaidBy] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -129,7 +132,11 @@ export default function App() {
     setEditId(null);
   }
 
-  const filtered = filterType === "all" ? bookings : bookings.filter(b => b.type === filterType);
+  const filtered = bookings
+    .filter(b => filterType === "all" || b.type === filterType)
+    .filter(b => filterSettled === "all" || (filterSettled === "settled" ? b.settled : !b.settled))
+    .filter(b => filterTravelers === "all" || b.travelers === filterTravelers)
+    .filter(b => filterPaidBy === "all" || (filterPaidBy === "pending" ? !b.paid_by : b.paid_by === filterPaidBy));
 
   const activeCurrencies = [...new Set(bookings.filter(b => b.price && b.currency).map(b => b.currency))].sort();
 
@@ -205,7 +212,6 @@ export default function App() {
               <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                 {editId ? "Edit booking" : "New booking"}
               </div>
-
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                 {TYPES.map(t => (
                   <button key={t.id} className="btn" onClick={() => setForm(f => ({ ...f, type: t.id }))} style={{
@@ -219,7 +225,6 @@ export default function App() {
                   </button>
                 ))}
               </div>
-
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={{ gridColumn: "1 / -1" }}>
                   <input placeholder="Name / description *" value={form.name}
@@ -245,7 +250,6 @@ export default function App() {
                 <input placeholder="Reference / confirmation #" value={form.reference}
                   onChange={e => setForm(f => ({ ...f, reference: e.target.value }))}
                   style={inp} />
-
                 <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
                   {["peter", "friend", "both"].map(v => (
@@ -268,14 +272,12 @@ export default function App() {
                     }}>{label}</button>
                   ))}
                 </div>
-
                 <div style={{ gridColumn: "1 / -1" }}>
                   <textarea placeholder="Notes" value={form.notes}
                     onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
                     rows={2} style={{ ...inp, resize: "vertical" }} />
                 </div>
               </div>
-
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
                 <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "#6b7280", border: "1px solid #1e2533" }}>Cancel</button>
                 <button className="btn" onClick={handleSubmit} disabled={saving || !form.name}
@@ -289,25 +291,67 @@ export default function App() {
           {activeTab === "bookings" && (
             <>
               {bookings.length > 0 && (
-                <div style={{ display: "flex", gap: 6, marginBottom: 18, flexWrap: "wrap" }}>
-                  {["all", ...TYPES.map(t => t.id)].map(f => {
-                    const t = TYPES.find(t => t.id === f);
-                    const active = filterType === f;
-                    const count = f === "all" ? bookings.length : bookings.filter(b => b.type === f).length;
-                    return (
-                      <button key={f} className="btn" onClick={() => setFilterType(f)} style={{
-                        padding: "5px 12px", borderRadius: 5,
-                        border: `1px solid ${active ? (t?.color || "#e2e8f0") : "#1e2533"}`,
-                        background: active ? `${t?.color || "#e2e8f0"}15` : "transparent",
-                        color: active ? (t?.color || "#e2e8f0") : "#4b5563",
-                        fontSize: 11, fontFamily: "'Source Code Pro', monospace",
-                        textTransform: "uppercase", letterSpacing: "0.06em",
-                      }}>
-                        {f === "all" ? "All" : `${t.icon} ${t.label}`}
-                        <span style={{ marginLeft: 5, opacity: 0.5 }}>{count}</span>
-                      </button>
-                    );
-                  })}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>type</span>
+                    {["all", ...TYPES.map(t => t.id)].map(f => {
+                      const t = TYPES.find(t => t.id === f);
+                      const active = filterType === f;
+                      const count = f === "all" ? bookings.length : bookings.filter(b => b.type === f).length;
+                      return (
+                        <button key={f} className="btn" onClick={() => setFilterType(f)} style={{
+                          padding: "4px 10px", borderRadius: 5,
+                          border: `1px solid ${active ? (t?.color || "#e2e8f0") : "#1e2533"}`,
+                          background: active ? `${t?.color || "#e2e8f0"}15` : "transparent",
+                          color: active ? (t?.color || "#e2e8f0") : "#4b5563",
+                          fontSize: 11, fontFamily: "'Source Code Pro', monospace",
+                          textTransform: "uppercase", letterSpacing: "0.06em",
+                        }}>
+                          {f === "all" ? "all" : `${t.icon} ${t.label}`}
+                          <span style={{ marginLeft: 4, opacity: 0.4 }}>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>for</span>
+                    {[["all", "all"], ["both", "both"], ["peter", "peter"], ["friend", "friend"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterTravelers(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterTravelers === v ? "#e2e8f0" : "#1e2533"}`,
+                        background: filterTravelers === v ? "#1e253380" : "transparent",
+                        color: filterTravelers === v ? "#e2e8f0" : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>paid</span>
+                    {[["all", "all"], ["peter", "peter"], ["friend", "friend"], ["pending", "⏳ unpaid"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterPaidBy(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterPaidBy === v ? (v === "pending" ? "#f59e0b" : "#10b981") : "#1e2533"}`,
+                        background: filterPaidBy === v ? (v === "pending" ? "#f59e0b15" : "#10b98115") : "transparent",
+                        color: filterPaidBy === v ? (v === "pending" ? "#f59e0b" : "#10b981") : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
+
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>status</span>
+                    {[["all", "all"], ["unsettled", "unsettled"], ["settled", "✓ settled"]].map(([v, label]) => (
+                      <button key={v} className="btn" onClick={() => setFilterSettled(v)} style={{
+                        padding: "4px 10px", borderRadius: 5, fontSize: 11,
+                        fontFamily: "'Source Code Pro', monospace",
+                        border: `1px solid ${filterSettled === v ? (v === "settled" ? "#10b981" : v === "unsettled" ? "#64748b" : "#e2e8f0") : "#1e2533"}`,
+                        background: filterSettled === v ? "#1e253380" : "transparent",
+                        color: filterSettled === v ? (v === "settled" ? "#10b981" : "#e2e8f0") : "#4b5563",
+                      }}>{label}</button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -343,7 +387,6 @@ export default function App() {
                             <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✕</button>
                           )}
                         </div>
-
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{
                             fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color,
@@ -362,7 +405,6 @@ export default function App() {
                           )}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
-
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
                           {b.date && <Meta label="date" value={b.date} />}
                           {b.price && <Meta label="price" value={fmt(b.price, b.currency)} highlight />}
