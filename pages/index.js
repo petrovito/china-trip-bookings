@@ -47,10 +47,17 @@ export default function App() {
 
   async function fetchBookings() {
     setLoading(true);
-    const res = await fetch("/api/bookings");
-    const data = await res.json();
-    setBookings(Array.isArray(data) ? data : []);
-    setLoading(false);
+    try {
+      const res = await fetch("/api/bookings");
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      const data = await res.json();
+      setBookings(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("fetchBookings failed:", e);
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSubmit() {
@@ -130,7 +137,6 @@ export default function App() {
 
       <div style={{ minHeight: "100vh", padding: "32px 20px 80px" }}>
         <div style={{ maxWidth: 680, margin: "0 auto" }}>
-
           <div style={{ marginBottom: 28 }}>
             <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 8, textTransform: "uppercase" }}>
               China Trip · Jun 8–27, 2026
