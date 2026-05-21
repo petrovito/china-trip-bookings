@@ -9,7 +9,7 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-19";
+const BUILD = "2026-05-21";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", price: "", currency: "USD",
@@ -40,6 +40,7 @@ export default function App() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [activeTab, setActiveTab] = useState("bookings");
 
@@ -47,13 +48,16 @@ export default function App() {
 
   async function fetchBookings() {
     setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/bookings");
-      if (!res.ok) throw new Error(`API error: ${res.status}`);
-      const data = await res.json();
+      const text = await res.text();
+      if (!res.ok) throw new Error(`${res.status}: ${text}`);
+      const data = JSON.parse(text);
       setBookings(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("fetchBookings failed:", e);
+      setError(e.message);
       setBookings([]);
     } finally {
       setLoading(false);
@@ -199,6 +203,12 @@ export default function App() {
                   {saving ? "Saving..." : editId ? "Save changes" : "Add booking"}
                 </button>
               </div>
+            </div>
+          )}
+
+          {error && (
+            <div style={{ background: "#1a0a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "#f87171" }}>
+              ✗ {error}
             </div>
           )}
 
