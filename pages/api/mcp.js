@@ -2,8 +2,8 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
 );
 
 const TOOLS = [
@@ -65,45 +65,23 @@ async function add_booking(args) {
   const { data, error } = await supabase
     .from("bookings")
     .insert({
-      type: args.type,
-      name: args.name,
-      date: args.date ?? null,
-      price: args.price ?? null,
-      currency: args.currency ?? "USD",
-      platform: args.platform ?? null,
-      reference: args.reference ?? null,
-      notes: args.notes ?? null,
-      travelers: args.travelers ?? "both",
+      type: args.type, name: args.name, date: args.date ?? null,
+      price: args.price ?? null, currency: args.currency ?? "USD",
+      platform: args.platform ?? null, reference: args.reference ?? null,
+      notes: args.notes ?? null, travelers: args.travelers ?? "both",
       paid_by: args.paid_by ?? null,
     })
-    .select()
-    .single();
-
+    .select().single();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
-
-  return {
-    content: [{
-      type: "text",
-      text: [
-        `✓ Booking added!`,
-        `  [${data.type}] ${data.name}`,
-        `  Date: ${data.date ?? "—"}  Price: ${data.price != null ? `${data.price} ${data.currency}` : "—"}`,
-        `  Travelers: ${data.travelers}`,
-        data.reference ? `  Ref: ${data.reference}` : null,
-        data.notes ? `  Notes: ${data.notes}` : null,
-      ].filter(Boolean).join("\n"),
-    }],
-  };
+  return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}` }] };
 }
 
 async function list_bookings(args) {
   let query = supabase.from("bookings").select("*").order("date", { ascending: true });
   if (args?.type && args.type !== "all") query = query.eq("type", args.type);
-
   const { data, error } = await query;
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   if (!data.length) return { content: [{ type: "text", text: "No bookings found." }] };
-
   const lines = data.map(b =>
     `[${b.type.toUpperCase()}] ${b.name}` +
     (b.date ? ` · ${b.date}` : "") +
@@ -112,7 +90,6 @@ async function list_bookings(args) {
     (b.travelers !== "both" ? ` · ${b.travelers} only` : "") +
     `  (id: ${b.id})`
   );
-
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${lines.join("\n")}` }] };
 }
 
@@ -132,24 +109,15 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
-
   if (req.method === "OPTIONS") return res.status(204).end();
   if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.0.0" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { jsonrpc, id, method, params } = req.body;
-
+  const { id, method, params } = req.body;
   try {
     switch (method) {
       case "initialize":
-        return res.json({
-          jsonrpc: "2.0", id,
-          result: {
-            protocolVersion: "2024-11-05",
-            capabilities: { tools: {} },
-            serverInfo: { name: "china-trip-bookings", version: "1.0.0" },
-          },
-        });
+        return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.0.0" } } });
       case "notifications/initialized":
         return res.status(204).end();
       case "ping":
