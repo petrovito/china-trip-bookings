@@ -1,11 +1,5 @@
 import { useState, useEffect } from "react";
-import { createClient } from "@supabase/supabase-js";
 import Head from "next/head";
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-);
 
 const TYPES = [
   { id: "flight", label: "Flight", color: "#0ea5e9", icon: "✈" },
@@ -15,20 +9,11 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-
-const BUILD = "2026-05-18";
+const BUILD = "2026-05-19";
 
 const EMPTY_FORM = {
-  type: "flight",
-  name: "",
-  date: "",
-  price: "",
-  currency: "USD",
-  platform: "",
-  reference: "",
-  notes: "",
-  travelers: "both",
-  paid_by: "",
+  type: "flight", name: "", date: "", price: "", currency: "USD",
+  platform: "", reference: "", notes: "", travelers: "both", paid_by: "",
 };
 
 function fmt(price, currency) {
@@ -41,14 +26,6 @@ function peterShare(b) {
   const p = parseFloat(b.price);
   if (b.travelers === "peter") return p;
   if (b.travelers === "friend") return 0;
-  return p / 2;
-}
-
-function friendShare(b) {
-  if (!b.price) return 0;
-  const p = parseFloat(b.price);
-  if (b.travelers === "friend") return p;
-  if (b.travelers === "peter") return 0;
   return p / 2;
 }
 
@@ -70,23 +47,32 @@ export default function App() {
 
   async function fetchBookings() {
     setLoading(true);
-    const { data } = await supabase.from("bookings").select("*").order("date", { ascending: true });
-    setBookings(data || []);
+    const res = await fetch("/api/bookings");
+    const data = await res.json();
+    setBookings(Array.isArray(data) ? data : []);
     setLoading(false);
   }
 
   async function handleSubmit() {
     if (!form.name) return;
     setSaving(true);
-    const payload = { ...form, price: form.price ? parseFloat(form.price) : null, date: form.date || null, paid_by: form.paid_by || null };
-    if (editId) { await supabase.from("bookings").update(payload).eq("id", editId); }
-    else { await supabase.from("bookings").insert(payload); }
+    const payload = {
+      ...form,
+      price: form.price ? parseFloat(form.price) : null,
+      date: form.date || null,
+      paid_by: form.paid_by || null,
+    };
+    if (editId) {
+      await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    } else {
+      await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    }
     await fetchBookings();
     setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
   }
 
   async function handleDelete(id) {
-    await supabase.from("bookings").delete().eq("id", id);
+    await fetch(`/api/bookings/${id}`, { method: "DELETE" });
     setDeleteConfirm(null); await fetchBookings();
   }
 
@@ -96,7 +82,7 @@ export default function App() {
   }
 
   async function handleSettle(id) {
-    await supabase.from("bookings").update({ settled: true }).eq("id", id);
+    await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settled: true }) });
     await fetchBookings();
   }
 
@@ -233,7 +219,6 @@ export default function App() {
                   ))}
                 </div>
               )}
-
               {loading ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "#1e2533", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
               ) : filtered.length === 0 ? (
