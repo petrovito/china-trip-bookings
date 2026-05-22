@@ -9,7 +9,7 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-21";
+const BUILD = "2026-05-22";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", price: "", currency: "USD",
@@ -32,10 +32,10 @@ function peterShare(b) {
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState("all");
-  const [filterSettled, setFilterSettled] = useState("all");
-  const [filterTravelers, setFilterTravelers] = useState("all");
-  const [filterPaidBy, setFilterPaidBy] = useState("all");
+  const [filterType, setFilterType] = useState(() => localStorage.getItem("ft") || "all");
+  const [filterSettled, setFilterSettled] = useState(() => localStorage.getItem("fs") || "all");
+  const [filterTravelers, setFilterTravelers] = useState(() => localStorage.getItem("ftr") || "all");
+  const [filterPaidBy, setFilterPaidBy] = useState(() => localStorage.getItem("fp") || "all");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -44,6 +44,10 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [activeTab, setActiveTab] = useState("bookings");
 
+  useEffect(() => { localStorage.setItem("ft",  filterType);      }, [filterType]);
+  useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
+  useEffect(() => { localStorage.setItem("ftr", filterTravelers); }, [filterTravelers]);
+  useEffect(() => { localStorage.setItem("fp",  filterPaidBy);    }, [filterPaidBy]);
   useEffect(() => { fetchBookings(); }, []);
 
   async function fetchBookings() {
