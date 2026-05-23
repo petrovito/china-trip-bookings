@@ -43,12 +43,16 @@ export default function App() {
   const [error, setError] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [activeTab, setActiveTab] = useState("bookings");
+  const [writeToken, setWriteToken] = useState("");
+  const [showUnlock, setShowUnlock] = useState(false);
+  const [unlockInput, setUnlockInput] = useState("");
 
   useEffect(() => {
     setFilterType(localStorage.getItem("ft") || "all");
     setFilterSettled(localStorage.getItem("fs") || "all");
     setFilterTravelers(localStorage.getItem("ftr") || "all");
     setFilterPaidBy(localStorage.getItem("fp") || "all");
+    setWriteToken(localStorage.getItem("wt") || "");
   }, []);
   useEffect(() => { localStorage.setItem("ft",  filterType);      }, [filterType]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
@@ -84,16 +88,16 @@ export default function App() {
       paid_by: form.paid_by || null,
     };
     if (editId) {
-      await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
     } else {
-      await fetch("/api/bookings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      await fetch("/api/bookings", { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
     }
     await fetchBookings();
     setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
   }
 
   async function handleDelete(id) {
-    await fetch(`/api/bookings/${id}`, { method: "DELETE" });
+    await fetch(`/api/bookings/${id}`, { method: "DELETE", headers: authedHeaders });
     setDeleteConfirm(null); await fetchBookings();
   }
 
@@ -103,11 +107,28 @@ export default function App() {
   }
 
   async function handleSettle(id) {
-    await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ settled: true }) });
+    await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: true }) });
     await fetchBookings();
   }
 
   function handleCancel() { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); }
+
+  const authedHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${writeToken}` };
+  const canWrite = !!writeToken;
+
+  function handleUnlock() {
+    const token = unlockInput.trim();
+    setWriteToken(token);
+    localStorage.setItem("wt", token);
+    setShowUnlock(false);
+    setUnlockInput("");
+  }
+
+  function handleLock() {
+    setWriteToken("");
+    localStorage.removeItem("wt");
+    setShowForm(false);
+  }
 
   const filtered = bookings
     .filter(b => filterType === "all" || b.type === filterType)
@@ -157,9 +178,30 @@ export default function App() {
             </div>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
               <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Bookings</h1>
-              {!showForm && (
-                <button className="btn" onClick={() => setShowForm(true)} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
-              )}
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {canWrite && !showForm && (
+                  <button className="btn" onClick={() => setShowForm(true)} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
+                )}
+                {showUnlock ? (
+                  <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <input
+                      type="password"
+                      placeholder="write password"
+                      value={unlockInput}
+                      onChange={e => setUnlockInput(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleUnlock()}
+                      autoFocus
+                      style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }}
+                    />
+                    <button className="btn" onClick={handleUnlock} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontFamily: "'Source Code Pro', monospace" }}>OK</button>
+                    <button className="btn" onClick={() => setShowUnlock(false)} style={{ background: "transparent", color: "#4b5563", borderRadius: 5, padding: "6px 10px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: "1px solid #1e2533" }}>✕</button>
+                  </span>
+                ) : canWrite ? (
+                  <button className="btn" onClick={handleLock} title="Lock (sign out)" style={{ background: "transparent", color: "#10b981", fontSize: 14, padding: "4px 8px", border: "1px solid #10b98140", borderRadius: 5 }}>🔓</button>
+                ) : (
+                  <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "4px 8px", border: "1px solid #1e2533", borderRadius: 5 }}>🔒</button>
+                )}
+              </div>
             </div>
             <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid #1e2533" }}>
               {["bookings", "summary"].map(tab => (
@@ -257,6 +299,7 @@ export default function App() {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                     return (
                       <div key={b.id} className="card" style={{ background: b.paid_by ? "#12151e" : "#0e1018", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
+                        {canWrite && (
                         <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
                           {b.paid_by && b.travelers === "both" && !b.settled && (
                             <button className="btn" onClick={() => handleSettle(b.id)} style={{ background: "transparent", color: "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: "1px solid #10b98140", borderRadius: 4 }}>settle ✓</button>
@@ -271,6 +314,7 @@ export default function App() {
                             <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
                           )}
                         </div>
+                        )}
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
