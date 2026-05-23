@@ -32,10 +32,10 @@ function peterShare(b) {
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterType, setFilterType] = useState(() => localStorage.getItem("ft") || "all");
-  const [filterSettled, setFilterSettled] = useState(() => localStorage.getItem("fs") || "all");
-  const [filterTravelers, setFilterTravelers] = useState(() => localStorage.getItem("ftr") || "all");
-  const [filterPaidBy, setFilterPaidBy] = useState(() => localStorage.getItem("fp") || "all");
+  const [filterType, setFilterType] = useState("all");
+  const [filterSettled, setFilterSettled] = useState("all");
+  const [filterTravelers, setFilterTravelers] = useState("all");
+  const [filterPaidBy, setFilterPaidBy] = useState("all");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [editId, setEditId] = useState(null);
@@ -44,6 +44,12 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [activeTab, setActiveTab] = useState("bookings");
 
+  useEffect(() => {
+    setFilterType(localStorage.getItem("ft") || "all");
+    setFilterSettled(localStorage.getItem("fs") || "all");
+    setFilterTravelers(localStorage.getItem("ftr") || "all");
+    setFilterPaidBy(localStorage.getItem("fp") || "all");
+  }, []);
   useEffect(() => { localStorage.setItem("ft",  filterType);      }, [filterType]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
   useEffect(() => { localStorage.setItem("ftr", filterTravelers); }, [filterTravelers]);
@@ -228,7 +234,7 @@ export default function App() {
                   ].map(({ label, active, setActive, opts, colorFn }) => (
                     <div key={label} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>{label}</span>
-                      {opts.map(([v, display]) => {
+                     {opts.map(([v, display]) => {
                         const isActive = active === v;
                         const color = colorFn(v);
                         return (
@@ -262,13 +268,13 @@ export default function App() {
                               <button className="btn" onClick={() => setDeleteConfirm(null)} style={{ background: "transparent", color: "#64748b", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>cancel</button>
                             </span>
                           ) : (
-                            <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✕</button>
+                            <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
                           )}
                         </div>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
-                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
+                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✒ settled</span>}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
@@ -297,7 +303,7 @@ export default function App() {
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
                   <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>── {currency} ─────────────────────────</div>
+                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
                     <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
                     {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
