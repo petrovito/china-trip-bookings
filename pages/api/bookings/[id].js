@@ -1,4 +1,3 @@
-// pages/api/bookings/[id].js
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
@@ -6,36 +5,39 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+function isAuthorized(req) {
+  return req.headers.authorization === `Bearer ${process.env.WRITE_PASSWORD}`;
+}
+
 export default async function handler(req, res) {
   const { id } = req.query;
 
   if (req.method === "PUT") {
+    if (!isAuthorized(req)) return res.status(401).json({ error: "Unauthorized" });
+    const { type, name, date, price, currency, platform, reference, notes, travelers, paid_by } = req.body;
     const { data, error } = await supabase
       .from("bookings")
-      .update(req.body)
+      .update({ type, name, date: date || null, price: price || null, currency: currency || "USD", platform: platform || null, reference: reference || null, notes: notes || null, travelers: travelers || "both", paid_by: paid_by || null })
       .eq("id", id)
-      .select()
-      .single();
+      .select().single();
     if (error) return res.status(500).json({ error: error.message });
     return res.json(data);
   }
 
   if (req.method === "PATCH") {
+    if (!isAuthorized(req)) return res.status(401).json({ error: "Unauthorized" });
     const { data, error } = await supabase
       .from("bookings")
       .update(req.body)
       .eq("id", id)
-      .select()
-      .single();
+      .select().single();
     if (error) return res.status(500).json({ error: error.message });
     return res.json(data);
   }
 
   if (req.method === "DELETE") {
-    const { error } = await supabase
-      .from("bookings")
-      .delete()
-      .eq("id", id);
+    if (!isAuthorized(req)) return res.status(401).json({ error: "Unauthorized" });
+    const { error } = await supabase.from("bookings").delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(204).end();
   }
