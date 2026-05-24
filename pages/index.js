@@ -9,7 +9,7 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-22";
+const BUILD = "2026-05-23";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", price: "", currency: "USD",
@@ -46,6 +46,7 @@ export default function App() {
   const [writeToken, setWriteToken] = useState("");
   const [showUnlock, setShowUnlock] = useState(false);
   const [unlockInput, setUnlockInput] = useState("");
+  const [toast, setToast] = useState(null); // { msg, ok }
 
   useEffect(() => {
     setFilterType(localStorage.getItem("ft") || "all");
@@ -88,17 +89,20 @@ export default function App() {
       paid_by: form.paid_by || null,
     };
     if (editId) {
-      await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
+      const r = await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
+      if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
     } else {
-      await fetch("/api/bookings", { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
+      const r = await fetch("/api/bookings", { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
+      if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
     }
     await fetchBookings();
+    showToast(editId ? "Booking updated" : "Booking added");
     setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
   }
 
   async function handleDelete(id) {
     await fetch(`/api/bookings/${id}`, { method: "DELETE", headers: authedHeaders });
-    setDeleteConfirm(null); await fetchBookings();
+    setDeleteConfirm(null); await fetchBookings(); showToast("Booking deleted", true);
   }
 
   function handleEdit(b) {
@@ -108,13 +112,18 @@ export default function App() {
 
   async function handleSettle(id) {
     await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: true }) });
-    await fetchBookings();
+    await fetchBookings(); showToast("Marked as settled");
   }
 
   function handleCancel() { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); }
 
   const authedHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${writeToken}` };
   const canWrite = !!writeToken;
+
+  function showToast(msg, ok = true) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2800);
+  }
 
   function handleUnlock() {
     const token = unlockInput.trim();
@@ -155,7 +164,7 @@ export default function App() {
   return (
     <>
       <Head>
-        <title>China Trip 2026 — Bookings</title>
+        <title>China Trip 2026 – Bookings</title>
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
       </Head>
       <style>{`
@@ -168,6 +177,7 @@ export default function App() {
         .btn:hover { opacity: 0.8; }
         select option { background: #1a1f2e; }
         .tab { cursor: pointer; transition: all 0.15s; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
       `}</style>
 
       <div style={{ minHeight: "100vh", padding: "32px 20px 80px" }}>
@@ -184,15 +194,7 @@ export default function App() {
                 )}
                 {showUnlock ? (
                   <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input
-                      type="password"
-                      placeholder="write password"
-                      value={unlockInput}
-                      onChange={e => setUnlockInput(e.target.value)}
-                      onKeyDown={e => e.key === "Enter" && handleUnlock()}
-                      autoFocus
-                      style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }}
-                    />
+                    <input type="password" placeholder="write password" value={unlockInput} onChange={e => setUnlockInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUnlock()} autoFocus style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }} />
                     <button className="btn" onClick={handleUnlock} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontFamily: "'Source Code Pro', monospace" }}>OK</button>
                     <button className="btn" onClick={() => setShowUnlock(false)} style={{ background: "transparent", color: "#4b5563", borderRadius: 5, padding: "6px 10px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: "1px solid #1e2533" }}>✕</button>
                   </span>
@@ -276,7 +278,7 @@ export default function App() {
                   ].map(({ label, active, setActive, opts, colorFn }) => (
                     <div key={label} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                       <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>{label}</span>
-                     {opts.map(([v, display]) => {
+                      {opts.map(([v, display]) => {
                         const isActive = active === v;
                         const color = colorFn(v);
                         return (
@@ -318,7 +320,7 @@ export default function App() {
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
-                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✒ settled</span>}
+                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
@@ -347,7 +349,7 @@ export default function App() {
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
                   <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
+                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─── {currency} ───────────────────────</div>
                     <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
                     {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
@@ -385,6 +387,20 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {toast && (
+        <div style={{
+          position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+          background: toast.ok ? "#10b981" : "#ef4444",
+          color: "#fff", borderRadius: 8, padding: "10px 20px",
+          fontFamily: "'Source Code Pro', monospace", fontSize: 12,
+          letterSpacing: "0.05em", boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          zIndex: 9999, whiteSpace: "nowrap", pointerEvents: "none",
+          animation: "fadeIn 0.15s ease",
+        }}>
+          {toast.msg}
+        </div>
+      )}
     </>
   );
 }
