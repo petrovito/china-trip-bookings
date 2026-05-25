@@ -48,6 +48,8 @@ export default function App() {
   const [showUnlock, setShowUnlock] = useState(false);
   const [unlockInput, setUnlockInput] = useState("");
   const [toast, setToast] = useState(null); // { msg, ok }
+  const [rates, setRates] = useState(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
 
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
@@ -139,6 +141,18 @@ export default function App() {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 2800);
   }
+
+  async function fetchRates() {
+    setRatesLoading(true);
+    try {
+      const res = await fetch("https://open.er-api.com/v6/latest/DKK");
+      const data = await res.json();
+      if (data.result === "success") setRates(data);
+    } catch {}
+    finally { setRatesLoading(false); }
+  }
+
+  useEffect(() => { if (activeTab === "summary") fetchRates(); }, [activeTab]);
 
   const filtered = bookings
     .filter(b => filterTypes.length === 0 || filterTypes.includes(b.type))
@@ -359,6 +373,63 @@ export default function App() {
           {activeTab === "summary" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
               {activeCurrencies.length === 0 && <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>}
+
+              {activeCurrencies.length > 0 && (() => {
+                const owedByCurrency = activeCurrencies.map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes })).filter(x => Math.abs(x.pOwes) >= 0.01);
+                const toDKK = (amount, currency) => {
+                  if (currency === "DKK") return amount;
+                  if (!rates?.rates?.[currency]) return null;
+                  return amount / rates.rates[currency];
+                };
+                const dkkAmounts = owedByCurrency.map(x => toDKK(x.pOwes, x.currency));
+                const allConverted = dkkAmounts.every(v => v !== null);
+                const totalDKK = allConverted ? dkkAmounts.reduce((s, v) => s + v, 0) : null;
+                const rateTs = rates?.time_last_update_utc ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+                return (
+                  <div style={{ background: "#0d1019", borderRadius: 10, padding: 20, border: "1px solid #252d3d" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
+                      <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid #1e2533", borderRadius: 4, color: "#374151", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
+                    </div>
+                    {owedByCurrency.length === 0 ? (
+                      <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
+                    ) : (
+                      <>
+                        {owedByCurrency.map(({ currency, pOwes }) => {
+                          const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
+                          const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
+                          const dkk = toDKK(pOwes, currency);
+                          return (
+                            <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                              <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                                {pOwes > 0 ? "Peter owes friend" : "Friend owes Peter"}
+                                <span style={{ color: pOwes > 0 ? "#f97316" : "#10b981", fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
+                              </div>
+                              {dkk !== null && <span style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
+                            </div>
+                          );
+                        })}
+                        {owedByCurrency.length > 1 && totalDKK !== null && (
+                          <div style={{ borderTop: "1px solid #1e2533", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                            <div style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
+                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
+                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "#64748b" }}>DKK</span>
+                            </div>
+                          </div>
+                        )}
+                        {owedByCurrency.length === 1 && totalDKK !== null && owedByCurrency[0].currency !== "DKK" && (
+                          <div style={{ borderTop: "1px solid #1e2533", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
+                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "#64748b" }}>DKK</span>
+                            </div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                    {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "#1e2533", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
+                  </div>
+                );
+              })()}
               {activeCurrencies.map(currency => {
                 const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
                 const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
