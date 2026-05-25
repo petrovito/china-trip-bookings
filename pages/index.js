@@ -10,7 +10,7 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-24";
+const BUILD = "2026-05-22";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", price: "", currency: "USD",
@@ -33,7 +33,7 @@ function peterShare(b) {
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filterTypes, setFilterTypes] = useState([]); // empty = show all
+  const [filterTypes, setFilterTypes] = useState([]);
   const [filterSettled, setFilterSettled] = useState("all");
   const [filterTravelers, setFilterTravelers] = useState("all");
   const [filterPaidBy, setFilterPaidBy] = useState("all");
@@ -47,7 +47,7 @@ export default function App() {
   const [writeToken, setWriteToken] = useState("");
   const [showUnlock, setShowUnlock] = useState(false);
   const [unlockInput, setUnlockInput] = useState("");
-  const [toast, setToast] = useState(null);
+  const [toast, setToast] = useState(null); // { msg, ok }
 
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
@@ -63,20 +63,32 @@ export default function App() {
   useEffect(() => { fetchBookings(); }, []);
 
   async function fetchBookings() {
-    setLoading(true); setError(null);
+    setLoading(true);
+    setError(null);
     try {
       const res = await fetch("/api/bookings");
       const text = await res.text();
       if (!res.ok) throw new Error(`${res.status}: ${text}`);
-      setBookings(Array.isArray(JSON.parse(text)) ? JSON.parse(text) : []);
-    } catch (e) { setError(e.message); setBookings([]); }
-    finally { setLoading(false); }
+      const data = JSON.parse(text);
+      setBookings(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("fetchBookings failed:", e);
+      setError(e.message);
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleSubmit() {
     if (!form.name) return;
     setSaving(true);
-    const payload = { ...form, price: form.price ? parseFloat(form.price) : null, date: form.date || null, paid_by: form.paid_by || null };
+    const payload = {
+      ...form,
+      price: form.price ? parseFloat(form.price) : null,
+      date: form.date || null,
+      paid_by: form.paid_by || null,
+    };
     if (editId) {
       const r = await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
@@ -91,7 +103,7 @@ export default function App() {
 
   async function handleDelete(id) {
     await fetch(`/api/bookings/${id}`, { method: "DELETE", headers: authedHeaders });
-    setDeleteConfirm(null); await fetchBookings(); showToast("Booking deleted");
+    setDeleteConfirm(null); await fetchBookings(); showToast("Booking deleted", true);
   }
 
   function handleEdit(b) {
@@ -99,9 +111,9 @@ export default function App() {
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function handleSettle(id) {
-    await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: true }) });
-    await fetchBookings(); showToast("Marked as settled");
+  async function handleSettle(id, currentlySettled) {
+    await fetch(`/api/bookings/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: !currentlySettled }) });
+    await fetchBookings(); showToast(currentlySettled ? "Marked as unsettled" : "Marked as settled");
   }
 
   function handleCancel() { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); }
@@ -109,15 +121,24 @@ export default function App() {
   const authedHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${writeToken}` };
   const canWrite = !!writeToken;
 
-  function showToast(msg, ok = true) { setToast({ msg, ok }); setTimeout(() => setToast(null), 2800); }
-
   function handleUnlock() {
     const token = unlockInput.trim();
-    setWriteToken(token); localStorage.setItem("wt", token);
-    setShowUnlock(false); setUnlockInput("");
+    setWriteToken(token);
+    localStorage.setItem("wt", token);
+    setShowUnlock(false);
+    setUnlockInput("");
   }
 
-  function handleLock() { setWriteToken(""); localStorage.removeItem("wt"); setShowForm(false); }
+  function handleLock() {
+    setWriteToken("");
+    localStorage.removeItem("wt");
+    setShowForm(false);
+  }
+
+  function showToast(msg, ok = true) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 2800);
+  }
 
   const filtered = bookings
     .filter(b => filterTypes.length === 0 || filterTypes.includes(b.type))
@@ -133,14 +154,18 @@ export default function App() {
     const pending = bks.filter(b => !b.paid_by);
     const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
     const pendingTotal = pending.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pOwes = paid.filter(b => !b.settled).reduce((s, b) => s + peterShare(b) - (b.paid_by === "peter" ? parseFloat(b.price) : 0), 0);
-    return { total, pendingTotal, pOwes, count: bks.length, pendingCount: pending.length, settledCount: paid.filter(b => b.settled).length };
+    const pOwes = paid.filter(b => !b.settled).reduce((s, b) => {
+      const fronted = b.paid_by === "peter" ? parseFloat(b.price) : 0;
+      return s + peterShare(b) - fronted;
+    }, 0);
+    const settledCount = paid.filter(b => b.settled).length;
+    return { total, pendingTotal, pOwes, count: bks.length, pendingCount: pending.length, settledCount };
   }
 
   return (
     <>
       <Head>
-        <title>China Trip 2026 – Bookings</title>
+        <title>China Trip 2026 — Bookings</title>
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
       </Head>
       <style>{`
@@ -170,12 +195,20 @@ export default function App() {
                 )}
                 {showUnlock ? (
                   <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <input type="password" placeholder="write password" value={unlockInput} onChange={e => setUnlockInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUnlock()} autoFocus style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }} />
+                    <input
+                      type="password"
+                      placeholder="write password"
+                      value={unlockInput}
+                      onChange={e => setUnlockInput(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleUnlock()}
+                      autoFocus
+                      style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }}
+                    />
                     <button className="btn" onClick={handleUnlock} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontFamily: "'Source Code Pro', monospace" }}>OK</button>
                     <button className="btn" onClick={() => setShowUnlock(false)} style={{ background: "transparent", color: "#4b5563", borderRadius: 5, padding: "6px 10px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: "1px solid #1e2533" }}>✕</button>
                   </span>
                 ) : canWrite ? (
-                  <button className="btn" onClick={handleLock} title="Lock" style={{ background: "transparent", color: "#10b981", fontSize: 14, padding: "4px 8px", border: "1px solid #10b98140", borderRadius: 5 }}>🔓</button>
+                  <button className="btn" onClick={handleLock} title="Lock (sign out)" style={{ background: "transparent", color: "#10b981", fontSize: 14, padding: "4px 8px", border: "1px solid #10b98140", borderRadius: 5 }}>🔓</button>
                 ) : (
                   <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "4px 8px", border: "1px solid #1e2533", borderRadius: 5 }}>🔒</button>
                 )}
@@ -285,25 +318,25 @@ export default function App() {
                     return (
                       <div key={b.id} className="card" style={{ background: b.paid_by ? "#12151e" : "#0e1018", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
                         {canWrite && (
-                          <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
-                            {b.paid_by && b.travelers === "both" && !b.settled && (
-                              <button className="btn" onClick={() => handleSettle(b.id)} style={{ background: "transparent", color: "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: "1px solid #10b98140", borderRadius: 4 }}>settle ✓</button>
-                            )}
-                            <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "#64748b", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
-                            {deleteConfirm === b.id ? (
-                              <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                <button className="btn" onClick={() => handleDelete(b.id)} style={{ background: "transparent", color: "#ef4444", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>delete?</button>
-                                <button className="btn" onClick={() => setDeleteConfirm(null)} style={{ background: "transparent", color: "#64748b", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>cancel</button>
-                              </span>
-                            ) : (
-                              <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
-                            )}
-                          </div>
+                        <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
+                          {b.paid_by && b.travelers === "both" && (
+                            <button className="btn" onClick={() => handleSettle(b.id, b.settled)} style={{ background: "transparent", color: b.settled ? "#64748b" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
+                          )}
+                          <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "#64748b", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
+                          {deleteConfirm === b.id ? (
+                            <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                              <button className="btn" onClick={() => handleDelete(b.id)} style={{ background: "transparent", color: "#ef4444", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>delete?</button>
+                              <button className="btn" onClick={() => setDeleteConfirm(null)} style={{ background: "transparent", color: "#64748b", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>cancel</button>
+                            </span>
+                          ) : (
+                            <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
+                          )}
+                        </div>
                         )}
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
-                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
+                          {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✒ settled</span>}
                           <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
@@ -332,7 +365,7 @@ export default function App() {
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
                   <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─── {currency} ─────────────────────────</div>
+                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
                     <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
                     {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
                     <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
@@ -370,7 +403,6 @@ export default function App() {
           </div>
         </div>
       </div>
-
       {toast && (
         <div style={{
           position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
