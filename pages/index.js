@@ -48,6 +48,7 @@ export default function App() {
   const [showUnlock, setShowUnlock] = useState(false);
   const [unlockInput, setUnlockInput] = useState("");
   const [toast, setToast] = useState(null); // { msg, ok }
+  const [showFilters, setShowFilters] = useState(true);
   const [rates, setRates] = useState(null);
   const [ratesLoading, setRatesLoading] = useState(false);
 
@@ -57,11 +58,13 @@ export default function App() {
     setFilterTravelers(localStorage.getItem("ftr") || "all");
     setFilterPaidBy(localStorage.getItem("fp") || "all");
     setWriteToken(localStorage.getItem("wt") || "");
+    const sf = localStorage.getItem("sf"); if (sf !== null) setShowFilters(sf !== "0");
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
   useEffect(() => { localStorage.setItem("ftr", filterTravelers); }, [filterTravelers]);
   useEffect(() => { localStorage.setItem("fp",  filterPaidBy);    }, [filterPaidBy]);
+  useEffect(() => { localStorage.setItem("sf",  showFilters ? "1" : "0"); }, [showFilters]);
   useEffect(() => { fetchBookings(); }, []);
 
   async function fetchBookings() {
@@ -293,6 +296,17 @@ export default function App() {
             <>
               {bookings.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button className="btn" onClick={() => setShowFilters(v => !v)} style={{ background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 5, color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                      <span style={{ fontSize: 9, lineHeight: 1 }}>{showFilters ? "▾" : "▸"}</span>
+                      filters
+                    </button>
+                    {!showFilters && (filterTypes.length > 0 || filterSettled !== "all" || filterTravelers !== "all" || filterPaidBy !== "all") && (
+                      <span style={{ fontSize: 10, color: "#0ea5e9", fontFamily: "'Source Code Pro', monospace" }}>●</span>
+                    )}
+                  </div>
+                  {showFilters && (
+                    <>
                   {[
                     { label: "for", active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend","friend"]], colorFn: () => "#e2e8f0" },
                     { label: "paid", active: filterPaidBy, setActive: setFilterPaidBy, opts: [["all","all"],["peter","peter"],["friend","friend"],["pending","⏳ unpaid"]], colorFn: v => v === "pending" ? "#f59e0b" : "#10b981" },
@@ -317,6 +331,8 @@ export default function App() {
                       return <button key={t.id} className="btn" onClick={() => setFilterTypes(prev => on ? prev.filter(x => x !== t.id) : [...prev, t.id])} style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${on ? t.color : "#1e2533"}`, background: on ? `${t.color}18` : "transparent", color: on ? t.color : "#4b5563" }}>{t.icon} {t.label}</button>;
                     })}
                   </div>
+                    </>
+                  )}
                 </div>
               )}
               {loading ? (
