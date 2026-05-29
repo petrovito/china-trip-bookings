@@ -168,7 +168,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [activeTab, setActiveTab] = useState("bookings");
+  const [activeTab, setActiveTab] = useState("trip");
   const [writeToken, setWriteToken] = useState("");
   const [showUnlock, setShowUnlock] = useState(false);
   const [unlockInput, setUnlockInput] = useState("");
@@ -179,6 +179,8 @@ export default function App() {
   const [expandedCards, setExpandedCards] = useState({});
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [locationImages, setLocationImages] = useState({});
+  const [showSummary, setShowSummary] = useState(false);
+  const [expandedFoodDays, setExpandedFoodDays] = useState({});
   const todayRef = useRef(null);
 
   useEffect(() => {
@@ -188,7 +190,7 @@ export default function App() {
     setFilterPaidBy(localStorage.getItem("fp") || "all");
     setWriteToken(localStorage.getItem("wt") || "");
     const sf = localStorage.getItem("sf"); if (sf !== null) setShowFilters(sf !== "0");
-    const tab = localStorage.getItem("tab"); if (tab) setActiveTab(tab);
+    const tab = localStorage.getItem("tab"); if (tab && ["trip","expenses"].includes(tab)) setActiveTab(tab);
     try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
@@ -292,7 +294,7 @@ export default function App() {
     } catch {} finally { setRatesLoading(false); }
   }
 
-  useEffect(() => { if (activeTab === "summary") fetchRates(); }, [activeTab]);
+  useEffect(() => { if (showSummary) fetchRates(); }, [showSummary]);
 
   // Fetch Unsplash vibe image for each location when trip tab opens
   useEffect(() => {
@@ -417,7 +419,7 @@ export default function App() {
               China Trip · Jun 8–27, 2026
             </div>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>Bookings</h1>
+              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>China Trip</h1>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {canWrite && !showForm && (
                   <button className="btn" onClick={() => setShowForm(true)} style={{ background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
@@ -441,9 +443,9 @@ export default function App() {
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid var(--border)" }}>
-              {["bookings", "trip", "summary"].map(tab => (
-                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "var(--accent)" : "var(--text-faint)", borderBottom: activeTab === tab ? "2px solid #0ea5e9" : "2px solid transparent", marginBottom: -1 }}>
-                  {tab === "trip" ? "✦ trip" : tab}
+              {[["trip", "✦ trip"], ["expenses", "expenses"]].map(([tab, label]) => (
+                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "var(--accent)" : "var(--text-faint)", borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent", marginBottom: -1 }}>
+                  {label}
                 </div>
               ))}
             </div>
@@ -531,9 +533,16 @@ export default function App() {
             <div style={{ background: "var(--surface)", border: "1px solid #7f1d1d", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "var(--text-error)" }}>✗ {error}</div>
           )}
 
-          {/* ── BOOKINGS TAB ── */}
-          {activeTab === "bookings" && (
+          {/* ── EXPENSES TAB ── */}
+          {activeTab === "expenses" && (
             <>
+              {/* Summary button */}
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
+                <button className="btn" onClick={() => setShowSummary(true)}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                  ¥ summary
+                </button>
+              </div>
               {bookings.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -708,12 +717,24 @@ export default function App() {
                             {/* Days */}
                             {group.days.map(({ date: d, bookings: dayBks }) => {
                               const isToday = d === today;
-                              const dayBksFiltered = dayBks.filter(b => b.type !== "hotel"); // hotels shown in banner
-                              if (dayBksFiltered.length === 0 && !isToday) return null;
+                              const nonHotel = dayBks.filter(b => b.type !== "hotel");
+                              const foodBks = nonHotel.filter(b => b.type === "food");
+                              const otherBks = nonHotel.filter(b => b.type !== "food");
+                              const isFoodExpanded = expandedFoodDays[d];
+
+                              // Food summary line
+                              const foodByCurrency = foodBks.reduce((acc, b) => {
+                                if (!b.price || !b.currency) return acc;
+                                acc[b.currency] = (acc[b.currency] || 0) + parseFloat(b.price);
+                                return acc;
+                              }, {});
+                              const foodSummary = Object.entries(foodByCurrency)
+                                .map(([c, v]) => `${v.toFixed(0)} ${c}`).join(" + ");
+
+                              if (otherBks.length === 0 && foodBks.length === 0 && !isToday) return null;
 
                               return (
-                                <div key={d} ref={isToday ? todayRef : null}
-                                  style={{ marginBottom: 12, paddingLeft: 0 }}>
+                                <div key={d} ref={isToday ? todayRef : null} style={{ marginBottom: 12 }}>
                                   {/* Day header */}
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                                     {isToday && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />}
@@ -722,15 +743,14 @@ export default function App() {
                                     </span>
                                   </div>
 
-                                  {dayBksFiltered.length === 0 && (
+                                  {otherBks.length === 0 && foodBks.length === 0 && (
                                     <div style={{ fontSize: 11, color: "var(--border)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 14 }}>—</div>
                                   )}
 
-                                  {dayBksFiltered.map(b => {
+                                  {otherBks.map(b => {
                                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                                     const isExpanded = expandedCards[b.id];
                                     const hasDetails = b.reference || b.platform || b.notes || b.price;
-
                                     return (
                                       <div key={b.id} className="trip-card"
                                         onClick={() => hasDetails && toggleCard(b.id)}
@@ -747,7 +767,6 @@ export default function App() {
                                             {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
                                         </div>
-
                                         {isExpanded && (
                                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
                                             {b.date_end && <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>until {fmtDate(b.date_end)}</div>}
@@ -781,6 +800,30 @@ export default function App() {
                                       </div>
                                     );
                                   })}
+
+                                  {/* Food one-liner */}
+                                  {foodBks.length > 0 && (
+                                    <div>
+                                      <div className="trip-card"
+                                        onClick={() => setExpandedFoodDays(p => ({ ...p, [d]: !p[d] }))}
+                                        style={{ background: "var(--surface)", borderRadius: 7, padding: "8px 14px", marginBottom: isFoodExpanded ? 0 : 6, borderLeft: "3px solid #e879f9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <span style={{ fontSize: 13 }}>🍜</span>
+                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                            {foodBks.length} {foodBks.length === 1 ? "meal" : "meals"}
+                                          </span>
+                                          {foodSummary && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {foodSummary}</span>}
+                                        </div>
+                                        <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isFoodExpanded ? "▲" : "▼"}</span>
+                                      </div>
+                                      {isFoodExpanded && foodBks.map(b => (
+                                        <div key={b.id} style={{ background: "var(--surface2)", borderRadius: "0 0 6px 6px", padding: "7px 14px 7px 40px", marginBottom: 2, borderLeft: "3px solid #e879f920", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                          <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "'Georgia', serif" }}>{b.name}</span>
+                                          {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{fmt(b.price, b.currency)}</span>}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
@@ -794,105 +837,105 @@ export default function App() {
             </div>
           )}
 
-          {/* ── SUMMARY TAB ── */}
-          {activeTab === "summary" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {activeCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>}
+          )}
 
-              {activeCurrencies.length > 0 && (() => {
-                const owedByCurrency = activeCurrencies
-                  .map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes }))
-                  .filter(x => Math.abs(x.pOwes) >= 0.01);
-                const toDKK = (amount, currency) => {
-                  if (currency === "DKK") return amount;
-                  if (!rates?.rates?.[currency]) return null;
-                  return amount / rates.rates[currency];
-                };
-                const dkkAmounts = owedByCurrency.map(x => toDKK(x.pOwes, x.currency));
-                const allConverted = dkkAmounts.every(v => v !== null);
-                const totalDKK = allConverted ? dkkAmounts.reduce((s, v) => s + v, 0) : null;
-                const rateTs = rates?.time_last_update_utc ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
-                return (
-                  <div style={{ background: "var(--bg)", borderRadius: 10, padding: 20, border: "1px solid #252d3d" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
-                      <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
-                    </div>
-                    {owedByCurrency.length === 0 ? (
-                      <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
-                    ) : (
-                      <>
-                        {owedByCurrency.map(({ currency, pOwes }) => {
-                          const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
-                          const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
-                          const dkk = toDKK(pOwes, currency);
-                          return (
-                            <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                              <div style={{ fontSize: 14, color: "var(--text)" }}>
-                                {pOwes > 0 ? "Peter owes friend" : "Friend owes Peter"}
-                                <span style={{ color: pOwes > 0 ? "#f97316" : "#10b981", fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
+          {/* ── SUMMARY MODAL ── */}
+          {showSummary && (
+            <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+              onClick={e => { if (e.target === e.currentTarget) setShowSummary(false); }}>
+              <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowSummary(false)} />
+              <div style={{ position: "relative", background: "var(--surface)", borderRadius: "16px 16px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 680, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -8px 40px rgba(0,0,0,0.3)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Summary</div>
+                  <button className="btn" onClick={() => setShowSummary(false)} style={{ background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 18, padding: "0 4px" }}>✕</button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                  {activeCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>}
+                  {activeCurrencies.length > 0 && (() => {
+                    const owedByCurrency = activeCurrencies
+                      .map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes }))
+                      .filter(x => Math.abs(x.pOwes) >= 0.01);
+                    const toDKK = (amount, currency) => {
+                      if (currency === "DKK") return amount;
+                      if (!rates?.rates?.[currency]) return null;
+                      return amount / rates.rates[currency];
+                    };
+                    const dkkAmounts = owedByCurrency.map(x => toDKK(x.pOwes, x.currency));
+                    const allConverted = dkkAmounts.every(v => v !== null);
+                    const totalDKK = allConverted ? dkkAmounts.reduce((s, v) => s + v, 0) : null;
+                    const rateTs = rates?.time_last_update_utc ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+                    return (
+                      <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 20, border: "1px solid var(--border2)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                          <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
+                          <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
+                        </div>
+                        {owedByCurrency.length === 0 ? (
+                          <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
+                        ) : (
+                          <>
+                            {owedByCurrency.map(({ currency, pOwes }) => {
+                              const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
+                              const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
+                              const dkk = toDKK(pOwes, currency);
+                              return (
+                                <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                                  <div style={{ fontSize: 14, color: "var(--text)" }}>
+                                    {pOwes > 0 ? "Peter owes friend" : "Friend owes Peter"}
+                                    <span style={{ color: pOwes > 0 ? "#f97316" : "#10b981", fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
+                                  </div>
+                                  {dkk !== null && <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
+                                </div>
+                              );
+                            })}
+                            {owedByCurrency.length > 1 && totalDKK !== null && (
+                              <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                                <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
+                                  {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
+                                </div>
                               </div>
-                              {dkk !== null && <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
-                            </div>
-                          );
-                        })}
-                        {owedByCurrency.length > 1 && totalDKK !== null && (
-                          <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                            <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
-                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
-                            </div>
-                          </div>
+                            )}
+                            {owedByCurrency.length === 1 && totalDKK !== null && owedByCurrency[0].currency !== "DKK" && (
+                              <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
+                                  {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
-                        {owedByCurrency.length === 1 && totalDKK !== null && owedByCurrency[0].currency !== "DKK" && (
-                          <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                            <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
-                            </div>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "var(--border)", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
-                  </div>
-                );
-              })()}
-
-              {activeCurrencies.map(currency => {
-                const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
-                const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
-                const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
-                return (
-                  <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
-                    <SummaryCard label="Total committed" value={fmt2(total)} color="var(--text)" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
-                    {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
-                      {Math.abs(pOwes) < 0.01 ? (
-                        <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
-                      ) : pOwes > 0 ? (
-                        <div style={{ fontSize: 14, color: "var(--text)" }}>Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span></div>
-                      ) : (
-                        <div style={{ fontSize: 14, color: "var(--text)" }}>Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span></div>
-                      )}
-                    </div>
-                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
-                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
-                      {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                        const catTotal = bookings.filter(b => b.currency === currency && b.price && b.type === t.id).reduce((s, b) => s + parseFloat(b.price), 0);
-                        if (catTotal === 0) return null;
-                        return (
-                          <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                            <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
-                            <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(catTotal)}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                        {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "var(--border)", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
+                      </div>
+                    );
+                  })()}
+                  {activeCurrencies.map(currency => {
+                    const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
+                    const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
+                    const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
+                    return (
+                      <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ {currency} ──────────────────────────</div>
+                        <SummaryCard label="Total committed" value={fmt2(total)} color="var(--text)" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
+                        {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
+                        <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
+                          <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>By category</div>
+                          {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
+                            const catTotal = bookings.filter(b => b.currency === currency && b.price && b.type === t.id).reduce((s, b) => s + parseFloat(b.price), 0);
+                            if (catTotal === 0) return null;
+                            return (
+                              <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
+                                <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(catTotal)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           )}
 
