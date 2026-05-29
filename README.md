@@ -1,21 +1,32 @@
-# China Trip 2026 — Bookings Tracker
+# China Trip 2026
 
-Personal travel bookings tracker for **Peter + 1**, covering the Jun 8–27, 2026 route:
-**Beijing → Yunnan (Kunming · Lijiang · Dali) → Zhangjiajie → Incheon**
+Personal travel companion app for **Peter + 1**, Jun 8–27, 2026.
+Route: **Beijing → Yunnan (Kunming · Lijiang · Dali) → Zhangjiajie → Incheon**
 
 Live at: https://china-trip-bookings.vercel.app
 
 ---
 
+## What it does
+
+Three modes in one app:
+
+- **Pre-trip:** plan and track bookings, hotels, flights, trains, activities
+- **During trip:** live itinerary view grouped by location, auto-scrolls to today
+- **Post-trip:** expense settlement and memory (photos planned)
+
+---
+
 ## Stack
 
-| Layer     | Tech                              |
-|-----------|-----------------------------------|
-| Framework | Next.js 14 — Pages Router         |
-| Hosting   | Vercel                            |
-| Database  | Supabase (PostgreSQL)             |
-| Auth      | Bearer token (`WRITE_PASSWORD`)   |
-| Fonts     | Playfair Display, Source Code Pro |
+| Layer     | Tech                                          |
+|-----------|-----------------------------------------------|
+| Framework | Next.js 14 — Pages Router                     |
+| Hosting   | Vercel                                        |
+| Database  | Supabase (PostgreSQL)                         |
+| Auth      | Bearer token (`WRITE_PASSWORD`) for writes    |
+| Theme     | System light/dark via CSS `prefers-color-scheme` |
+| Fonts     | Playfair Display, Source Code Pro             |
 
 ---
 
@@ -23,12 +34,13 @@ Live at: https://china-trip-bookings.vercel.app
 
 ```
 pages/
-  index.js          ← Main UI (single page, ~900 lines)
+  index.js               ← Main UI (~980 lines, single page)
   api/
     bookings/
-      index.js      ← GET (list), POST (create)
-      [id].js       ← PUT (edit), PATCH (settle), DELETE
-    mcp.js          ← MCP server for Claude integration
+      index.js           ← GET (list), POST (create)
+      [id].js            ← PUT (edit), PATCH (settle), DELETE
+    mcp.js               ← MCP server for Claude integration
+    unsplash.js          ← Unsplash image proxy (server-side key)
 ```
 
 ---
@@ -36,9 +48,10 @@ pages/
 ## Environment Variables (Vercel)
 
 ```
-SUPABASE_URL          Supabase project URL
-SUPABASE_SERVICE_KEY  Service role key — used by API routes and MCP server (bypasses RLS)
-WRITE_PASSWORD        Bearer token required for all write operations from the UI
+SUPABASE_URL            Supabase project URL
+SUPABASE_SERVICE_KEY    Service role key — server-side only, bypasses RLS
+WRITE_PASSWORD          Bearer token for all write operations from the UI
+UNSPLASH_ACCESS_KEY     Unsplash app access key for location vibe images
 ```
 
 ---
@@ -47,27 +60,27 @@ WRITE_PASSWORD        Bearer token required for all write operations from the UI
 
 ### Table: `bookings`
 
-| Column      | Type      | Notes                                               |
-|-------------|-----------|-----------------------------------------------------|
-| id          | uuid      | Primary key, auto-generated                         |
-| type        | text      | flight · hotel · train · ticket · food · activity   |
-| name        | text      | Description / booking name (required)               |
-| date        | date      | Start date (check-in for hotels)                    |
-| date_end    | date      | End/checkout date — used for hotels and activities  |
-| location    | text      | City or region e.g. "Beijing", "Lijiang"            |
-| price       | numeric   | Optional — activities may have no price             |
-| currency    | text      | USD · CNY · EUR · KRW · VND · DKK                   |
-| platform    | text      | e.g. Trip.com, Booking.com, Klook                   |
-| reference   | text      | Confirmation number or flight code                  |
-| notes       | text      | Free-form notes                                     |
-| travelers   | text      | peter · friend · both (default: both)               |
-| paid_by     | text      | peter · friend · null (null = unpaid)               |
-| settled     | boolean   | true = the other person has paid back their share   |
-| created_at  | timestamp | Auto-generated                                      |
+| Column      | Type        | Notes                                               |
+|-------------|-------------|-----------------------------------------------------|
+| id          | uuid        | Primary key, auto-generated                         |
+| type        | text        | flight · hotel · train · ticket · food · activity   |
+| name        | text        | Description / booking name (required)               |
+| date        | date        | Start date (check-in for hotels)                    |
+| date_end    | date        | End/checkout date — hotels and multi-day activities |
+| location    | text        | City or region e.g. "Beijing", "Lijiang"            |
+| price       | numeric     | Optional — activities may have no price             |
+| currency    | text        | USD · CNY · EUR · KRW · VND · DKK                   |
+| platform    | text        | e.g. Trip.com, Booking.com, Klook                   |
+| reference   | text        | Confirmation number or flight code                  |
+| notes       | text        | Free-form notes                                     |
+| travelers   | text        | peter · friend · both (default: both)               |
+| paid_by     | text        | peter · friend · null (null = unpaid)               |
+| settled     | boolean     | true = other person has reimbursed their share      |
+| created_at  | timestamptz | Auto-generated                                      |
 
-**RLS:** Enabled with a permissive policy. All API routes use the service role key server-side.
+**RLS:** Enabled with a permissive policy. All API routes use service role key server-side.
 
-**Notes on `activity` type:** Activities are excluded from all expense calculations and settlement logic. Use for plans, hikes, sightseeing — anything that doesn't need cost tracking.
+**`activity` type:** Excluded from all expense calculations and settlement. No travelers/paid_by fields. Use for hikes, sightseeing, free plans.
 
 ---
 
@@ -78,82 +91,74 @@ Write operations (POST, PUT, PATCH, DELETE) require:
 Authorization: Bearer <WRITE_PASSWORD>
 ```
 
-The frontend stores the token in `localStorage` under the key `wt`. The 🔒 button triggers an inline password prompt; 🔓 locks (clears) the token.
+Frontend stores the token in `localStorage` under key `wt`. The 🔒 button in the header triggers a password prompt; 🔓 clears it.
 
-Read access (`GET /api/bookings`) is public — no token needed.
+Read access (`GET /api/bookings`) is always public.
 
 ---
 
 ## API Routes
 
-### `GET /api/bookings`
-Returns all bookings ordered by date ascending. Public.
-
-### `POST /api/bookings`
-Creates a new booking. Body: any booking fields (see table above).
-
-### `PUT /api/bookings/:id`
-Full replacement of a booking's fields.
-
-### `PATCH /api/bookings/:id`
-Partial update — used primarily to toggle `settled`.
-
-### `DELETE /api/bookings/:id`
-Deletes a booking by ID.
+| Method | Path                   | Description                        |
+|--------|------------------------|------------------------------------|
+| GET    | `/api/bookings`        | List all, ordered by date. Public. |
+| POST   | `/api/bookings`        | Create a new booking.              |
+| PUT    | `/api/bookings/:id`    | Full update of a booking.          |
+| PATCH  | `/api/bookings/:id`    | Partial update — used for settle.  |
+| DELETE | `/api/bookings/:id`    | Delete a booking.                  |
+| GET    | `/api/unsplash`        | Proxy Unsplash image by `?location=`. Cached 24h. |
 
 ---
 
 ## MCP Server
 
-`/api/mcp` exposes a Model Context Protocol server so Claude can read and write bookings directly from chat.
+`/api/mcp` — Model Context Protocol server so Claude can read and write bookings directly from chat.
 
-**MCP URL:** `https://china-trip-bookings.vercel.app/api/mcp`
-**Version:** 1.1.0
+**URL:** `https://china-trip-bookings.vercel.app/api/mcp`  
+**Version:** 1.1.0  
+**Connected in Claude.ai as:** "china expenses"
 
 ### Tools
 
-| Tool              | Description                                          |
-|-------------------|------------------------------------------------------|
-| `add_booking`     | Add a new booking — supports all fields incl. `date_end`, `location`, `activity` type |
-| `list_bookings`   | List all bookings, optionally filtered by type       |
-| `settle_booking`  | Mark a booking as settled by ID                      |
-| `delete_booking`  | Delete a booking by ID                               |
+| Tool             | Description                                                          |
+|------------------|----------------------------------------------------------------------|
+| `add_booking`    | Add a booking. Supports all fields incl. `date_end`, `location`, `activity` type. |
+| `list_bookings`  | List all bookings, optionally filtered by type.                      |
+| `settle_booking` | Mark a booking as settled by ID.                                     |
+| `delete_booking` | Delete a booking by ID.                                              |
 
-The MCP server calls Supabase directly with the service key — it does not go through the REST routes and does not require `WRITE_PASSWORD`.
+MCP uses Supabase service key directly — does not go through REST routes, no `WRITE_PASSWORD` needed.
 
 ---
 
 ## Frontend — Tabs
 
-### Bookings tab
-- Full list of all bookings with filters
-- **Booking types:** Flight ✈ · Hotel 🏨 · Train 🚄 · Ticket 🎟 · Food 🍜 · Activity 📍
-- Multi-select type filter + filters for travelers / paid-by / settled status
-- Filter state persisted in `localStorage`
-- Add / edit / delete / settle actions (write mode only, hover to reveal)
-- Cards show `date_end` as a range when present, and `location` as a meta field
-
-### Trip tab (✦ trip)
-- Location-grouped view for use during the trip
-- Each location has a **hero banner** with a vibe photo auto-fetched from Unsplash
-- Active location gets a pulsing blue dot; past locations are dimmed
+### ✦ Trip tab (default)
+- Bookings grouped by **location region**, each with a Unsplash vibe hero image
+- Active location has a pulsing blue dot; past locations are dimmed
 - **Auto-scrolls to today** on tab open
-- Hotels shown as a persistent banner across their stay span
-- Day-by-day breakdown within each location; tap any card to expand details
-- Expanded cards show reference, platform, notes, and links (Google Maps, booking platform)
-- Location groups are collapsible
+- Hotels shown as a persistent banner across their full stay span
+- Day-by-day breakdown per location; non-food items expand on tap for ref/notes/links
+- **Food entries collapsed to a one-liner per day** — e.g. `🍜 3 meals · 245 CNY` — expandable to see individual items
+- Google Maps and platform deep-links in expanded cards
+- Location groups are collapsible; state persists in `localStorage`
 
-### Summary tab
-- Per-currency totals across all expense types (activity excluded)
-- Pending payment amounts
-- Settlement balance (who owes whom), with DKK conversion via open.er-api.com
-- Breakdown by category
+### Expenses tab
+- Full list of all bookings with filters (type, travelers, paid-by, settled status)
+- **¥ summary button** opens a bottom-sheet modal with settlement snapshot, per-currency totals, and category breakdown
+- Add / edit / delete / settle actions (write mode only, revealed on hover)
+- Filter state persists in `localStorage`
+
+### Summary modal (inside Expenses)
+- Settlement snapshot across all currencies with DKK conversion
+- Live exchange rates from open.er-api.com, refreshable
+- Per-category breakdown (activity type excluded)
 
 ---
 
 ## Settlement Logic
 
-For unsettled bookings where `paid_by` is set:
+For unsettled bookings where `paid_by` is set and type is not `activity`:
 
 ```
 pOwes += peterShare(booking) - amountPeterFronted
@@ -162,30 +167,55 @@ pOwes += peterShare(booking) - amountPeterFronted
 - `travelers = "both"` → Peter's share is 50%
 - `travelers = "peter"` → Peter's share is 100%
 - `travelers = "friend"` → Peter's share is 0%
-- If `pOwes > 0`: Peter owes friend
-- If `pOwes < 0`: Friend owes Peter
-- Settled bookings and `activity` type bookings are excluded from the balance
+- `pOwes > 0` → Peter owes friend · `pOwes < 0` → Friend owes Peter
+
+---
+
+## Theme
+
+Automatically matches Android/iOS system setting via CSS `prefers-color-scheme`. All colors defined as CSS variables in the `<style>` block — no JS state needed for theme switching.
+
+---
+
+## localStorage Keys
+
+| Key  | Value                          |
+|------|--------------------------------|
+| `wt` | Write token                    |
+| `ft` | Filter types (JSON array)      |
+| `fs` | Filter settled                 |
+| `ftr`| Filter travelers               |
+| `fp` | Filter paid-by                 |
+| `sf` | Show filters toggle            |
+| `tab`| Active tab (`trip` or `expenses`) |
+| `cg` | Collapsed location groups (JSON) |
 
 ---
 
 ## Deploy Pipeline
 
-Files live in Google Drive folder `china-trip-sync/`, mirroring the repo structure:
+Files in Google Drive `china-trip-sync/` mirror the repo:
 
 ```
 china-trip-sync/
   pages/
-    index.js
+    index.js           ← TOO LARGE for Drive sync — upload manually
     api/
       mcp.js
+      unsplash.js
       bookings/
         index.js
         [id].js
 ```
 
-**To deploy a change:** upload file to Drive → run `syncToDrive()` in Apps Script → Vercel auto-deploys from GitHub (`petrovito/china-trip-bookings`).
+**Drive folder IDs:**
+- `pages/` → `1UMmqfu9ElFojFem7fMtVE512kwX3AIJw`
+- `pages/api/` → `1Clz8BK6ZzVTPsKG04HzrobNm3frvaWf-`
+- `pages/api/bookings/` → `1VAwKI0VK2vJJ4D_g4ayNtiRsVF2vQxwH`
 
-**Exception:** `index.js` is too large to push via Drive/Apps Script. Upload it manually to GitHub or via the Vercel CLI.
+**To deploy small API files:** upload to Drive → run `syncToDrive()` in Apps Script → Vercel auto-deploys from GitHub (`petrovito/china-trip-bookings`).
+
+**`index.js`:** upload manually to GitHub — too large for the Drive/Apps Script pipeline.
 
 ---
 
@@ -193,16 +223,15 @@ china-trip-sync/
 
 ```bash
 npm install
-# Create .env.local with the three env vars above
+# Create .env.local with the four env vars listed above
 npm run dev
+# Open http://localhost:3000
 ```
-
-Open http://localhost:3000.
 
 ---
 
-## Planned / In Progress
+## Planned
 
 - [ ] Personal photo uploads per location (Supabase Storage)
-- [ ] Photo grid per location in Trip tab (mix of personal + Unsplash vibe)
-- [ ] Trip memory view post-trip
+- [ ] Photo grid in Trip tab — personal shots + Unsplash vibe mixed
+- [ ] Post-trip memory view
