@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 
 const TYPES = [
-  { id: "flight",   label: "Flight",   color: "#0ea5e9", icon: "✈"  },
+  { id: "flight",   label: "Flight",   color: "var(--accent)", icon: "✈"  },
   { id: "hotel",    label: "Hotel",    color: "#8b5cf6", icon: "🏨" },
   { id: "train",    label: "Train",    color: "#10b981", icon: "🚄" },
   { id: "ticket",   label: "Ticket",   color: "#f97316", icon: "🎟" },
@@ -188,12 +188,16 @@ export default function App() {
     setFilterPaidBy(localStorage.getItem("fp") || "all");
     setWriteToken(localStorage.getItem("wt") || "");
     const sf = localStorage.getItem("sf"); if (sf !== null) setShowFilters(sf !== "0");
+    const tab = localStorage.getItem("tab"); if (tab) setActiveTab(tab);
+    try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
   useEffect(() => { localStorage.setItem("ftr", filterTravelers); }, [filterTravelers]);
   useEffect(() => { localStorage.setItem("fp",  filterPaidBy);    }, [filterPaidBy]);
   useEffect(() => { localStorage.setItem("sf",  showFilters ? "1" : "0"); }, [showFilters]);
+  useEffect(() => { localStorage.setItem("tab", activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem("cg",  JSON.stringify(collapsedGroups)); }, [collapsedGroups]);
   useEffect(() => { fetchBookings(); }, []);
 
   // Scroll to today when switching to trip tab
@@ -366,18 +370,42 @@ export default function App() {
         <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Source+Code+Pro:wght@400;500&display=swap" rel="stylesheet" />
       </Head>
       <style>{`
+        :root {
+          color-scheme: light dark;
+          --bg: #f8fafc; --surface: #ffffff; --surface2: #f1f5f9; --surface-hover: #e8edf2;
+          --border: #e2e8f0; --border2: #d1d5db; --border-error: #fca5a5;
+          --text: #0f172a; --text-medium: #334155; --text-muted: #64748b;
+          --text-faint: #94a3b8; --text-tiny: #b0bcc8; --text-error: #dc2626;
+          --accent: #0284c7;
+          --hero-overlay: linear-gradient(to right, rgba(248,250,252,0.9) 35%, rgba(248,250,252,0.15) 100%);
+          --hero-img-opacity: 0.55;
+          --hotel-bg: #f5f3ff; --hotel-border: rgba(139,92,246,0.2); --hotel-text: #6d28d9;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg: #0f1117; --surface: #12151e; --surface2: #151820; --surface-hover: #161b27;
+            --border: #1e2533; --border2: #252d3d; --border-error: #7f1d1d;
+            --text: #e2e8f0; --text-medium: #cbd5e1; --text-muted: #94a3b8;
+            --text-faint: #4b5563; --text-tiny: #374151; --text-error: #f87171;
+            --accent: #0ea5e9;
+            --hero-overlay: linear-gradient(to right, rgba(15,17,23,0.84) 35%, rgba(15,17,23,0.1) 100%);
+            --hero-img-opacity: 0.5;
+            --hotel-bg: #12101f; --hotel-border: rgba(139,92,246,0.3); --hotel-text: #c4b5fd;
+          }
+        }
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #0f1117; color: #e2e8f0; font-family: 'Georgia', serif; }
-        input, select, textarea { outline: none; }
-        input::placeholder, textarea::placeholder { color: #374151; }
+        body { background: var(--bg); color: var(--text); font-family: 'Georgia', serif; }
+        input, select, textarea { outline: none; color: var(--text); }
+        input::placeholder, textarea::placeholder { color: var(--text-faint); }
         .card:hover .card-actions { opacity: 1 !important; }
         .btn { cursor: pointer; transition: opacity 0.15s; border: none; }
         .btn:hover { opacity: 0.8; }
-        select option { background: #1a1f2e; }
+        select option { background: var(--surface2); }
         .tab { cursor: pointer; transition: all 0.15s; }
         @keyframes fadeIn { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
         .trip-card { cursor: pointer; transition: background 0.15s; }
-        .trip-card:hover { background: #161b27 !important; }
+        .trip-card:hover { background: var(--surface-hover) !important; }
+        .hero-img { opacity: var(--hero-img-opacity); filter: saturate(0.8); }
       `}</style>
 
       <div style={{ minHeight: "100vh", padding: "32px 20px 80px" }}>
@@ -385,14 +413,14 @@ export default function App() {
 
           {/* Header */}
           <div style={{ marginBottom: 28 }}>
-            <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 8, textTransform: "uppercase" }}>
+            <div style={{ fontSize: 11, letterSpacing: "0.2em", color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 8, textTransform: "uppercase" }}>
               China Trip · Jun 8–27, 2026
             </div>
             <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "#f1f5f9", letterSpacing: "-0.02em" }}>Bookings</h1>
+              <h1 style={{ fontFamily: "'Playfair Display', serif", fontSize: 28, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.02em" }}>Bookings</h1>
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 {canWrite && !showForm && (
-                  <button className="btn" onClick={() => setShowForm(true)} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
+                  <button className="btn" onClick={() => setShowForm(true)} style={{ background: "var(--accent)", color: "#fff", borderRadius: 6, padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em", fontWeight: 500 }}>+ Add</button>
                 )}
                 {showUnlock ? (
                   <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -400,21 +428,21 @@ export default function App() {
                       onChange={e => setUnlockInput(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleUnlock()}
                       autoFocus style={{ ...inp, width: 140, padding: "6px 10px", fontSize: 12 }} />
-                    <button className="btn" onClick={handleUnlock} style={{ background: "#0ea5e9", color: "#fff", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontFamily: "'Source Code Pro', monospace" }}>OK</button>
-                    <button className="btn" onClick={() => setShowUnlock(false)} style={{ background: "transparent", color: "#4b5563", borderRadius: 5, padding: "6px 10px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: "1px solid #1e2533" }}>✕</button>
+                    <button className="btn" onClick={handleUnlock} style={{ background: "var(--accent)", color: "#fff", borderRadius: 5, padding: "6px 12px", fontSize: 11, fontFamily: "'Source Code Pro', monospace" }}>OK</button>
+                    <button className="btn" onClick={() => setShowUnlock(false)} style={{ background: "transparent", color: "var(--text-faint)", borderRadius: 5, padding: "6px 10px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: "1px solid var(--border)" }}>✕</button>
                   </span>
                 ) : canWrite ? (
                   <button className="btn" onClick={handleLock} title="Lock" style={{ background: "transparent", color: "#10b981", fontSize: 14, padding: "4px 8px", border: "1px solid #10b98140", borderRadius: 5 }}>🔓</button>
                 ) : (
-                  <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "4px 8px", border: "1px solid #1e2533", borderRadius: 5 }}>🔒</button>
+                  <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5 }}>🔒</button>
                 )}
               </div>
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid #1e2533" }}>
+            <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid var(--border)" }}>
               {["bookings", "trip", "summary"].map(tab => (
-                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "#0ea5e9" : "#4b5563", borderBottom: activeTab === tab ? "2px solid #0ea5e9" : "2px solid transparent", marginBottom: -1 }}>
+                <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "var(--accent)" : "var(--text-faint)", borderBottom: activeTab === tab ? "2px solid #0ea5e9" : "2px solid transparent", marginBottom: -1 }}>
                   {tab === "trip" ? "✦ trip" : tab}
                 </div>
               ))}
@@ -423,12 +451,12 @@ export default function App() {
 
           {/* Add/Edit Form */}
           {showForm && (
-            <div style={{ background: "#151820", borderRadius: 10, padding: 20, marginBottom: 24, border: "1px solid #1e2533" }}>
-              <div style={{ fontSize: 12, color: "#64748b", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>{editId ? "Edit booking" : "New booking"}</div>
+            <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 20, marginBottom: 24, border: "1px solid var(--border)" }}>
+              <div style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>{editId ? "Edit booking" : "New booking"}</div>
               <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                 {TYPES.map(t => (
                   <button key={t.id} className="btn" onClick={() => setForm(f => ({ ...f, type: t.id }))}
-                    style={{ padding: "6px 12px", borderRadius: 5, border: `1.5px solid ${form.type === t.id ? t.color : "#1e2533"}`, background: form.type === t.id ? `${t.color}20` : "transparent", color: form.type === t.id ? t.color : "#4b5563", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>
+                    style={{ padding: "6px 12px", borderRadius: 5, border: `1.5px solid ${form.type === t.id ? t.color : "var(--border)"}`, background: form.type === t.id ? `${t.color}20` : "transparent", color: form.type === t.id ? t.color : "var(--text-faint)", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>
                     {t.icon} {t.label}
                   </button>
                 ))}
@@ -438,14 +466,14 @@ export default function App() {
                   <input placeholder="Name / description *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inp} />
                 </div>
                 <div>
-                  <div style={{ fontSize: 10, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+                  <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
                     {form.type === "hotel" ? "Check-in" : "Date"}
                   </div>
                   <input type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} style={inp} />
                 </div>
                 {showDateEnd ? (
                   <div>
-                    <div style={{ fontSize: 10, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
                       {form.type === "hotel" ? "Check-out" : "End date"}
                     </div>
                     <input type="date" value={form.date_end} onChange={e => setForm(f => ({ ...f, date_end: e.target.value }))} style={inp} />
@@ -473,15 +501,15 @@ export default function App() {
                 </div>
                 {form.type !== "activity" && (
                   <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
+                    <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
                     {["peter", "friend", "both"].map(v => (
                       <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, travelers: v }))}
-                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.travelers === v ? "#e2e8f0" : "#1e2533"}`, background: form.travelers === v ? "#1e2533" : "transparent", color: form.travelers === v ? "#e2e8f0" : "#4b5563" }}>{v}</button>
+                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.travelers === v ? "var(--text)" : "var(--border)"}`, background: form.travelers === v ? "var(--border)" : "transparent", color: form.travelers === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
                     ))}
-                    <span style={{ fontSize: 11, color: "#4b5563", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
+                    <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
                     {[{ v: "peter", label: "peter" }, { v: "friend", label: "friend" }, { v: "", label: "⏳ unpaid" }].map(({ v, label }) => (
                       <button key={label} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))}
-                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#1e2533"}`, background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent", color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "#4b5563" }}>{label}</button>
+                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "var(--border)"}`, background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent", color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "var(--text-faint)" }}>{label}</button>
                     ))}
                   </div>
                 )}
@@ -490,9 +518,9 @@ export default function App() {
                 </div>
               </div>
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
-                <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "#6b7280", border: "1px solid #1e2533" }}>Cancel</button>
+                <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
                 <button className="btn" onClick={handleSubmit} disabled={saving || !form.name}
-                  style={{ ...btnStyle, background: "#0ea5e9", color: "#fff", opacity: (!form.name || saving) ? 0.5 : 1 }}>
+                  style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: (!form.name || saving) ? 0.5 : 1 }}>
                   {saving ? "Saving..." : editId ? "Save changes" : "Add booking"}
                 </button>
               </div>
@@ -500,7 +528,7 @@ export default function App() {
           )}
 
           {error && (
-            <div style={{ background: "#1a0a0a", border: "1px solid #7f1d1d", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "#f87171" }}>✗ {error}</div>
+            <div style={{ background: "var(--surface)", border: "1px solid #7f1d1d", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "var(--text-error)" }}>✗ {error}</div>
           )}
 
           {/* ── BOOKINGS TAB ── */}
@@ -509,41 +537,41 @@ export default function App() {
               {bookings.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <button className="btn" onClick={() => setShowFilters(v => !v)} style={{ background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 5, color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                    <button className="btn" onClick={() => setShowFilters(v => !v)} style={{ background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 5, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                       <span style={{ fontSize: 9, lineHeight: 1 }}>{showFilters ? "▾" : "▸"}</span> filters
                     </button>
                     {!showFilters && (filterTypes.length > 0 || filterSettled !== "all" || filterTravelers !== "all" || filterPaidBy !== "all") && (
-                      <span style={{ fontSize: 10, color: "#0ea5e9", fontFamily: "'Source Code Pro', monospace" }}>●</span>
+                      <span style={{ fontSize: 10, color: "var(--accent)", fontFamily: "'Source Code Pro', monospace" }}>●</span>
                     )}
                   </div>
                   {showFilters && (
                     <>
                       {[
-                        { label: "for",    active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend","friend"]], colorFn: () => "#e2e8f0" },
+                        { label: "for",    active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend","friend"]], colorFn: () => "var(--text)" },
                         { label: "paid",   active: filterPaidBy,    setActive: setFilterPaidBy,    opts: [["all","all"],["peter","peter"],["friend","friend"],["pending","⏳ unpaid"]], colorFn: v => v === "pending" ? "#f59e0b" : "#10b981" },
-                        { label: "status", active: filterSettled,   setActive: setFilterSettled,   opts: [["all","all"],["unsettled","unsettled"],["settled","✓ settled"]], colorFn: v => v === "settled" ? "#10b981" : "#e2e8f0" },
+                        { label: "status", active: filterSettled,   setActive: setFilterSettled,   opts: [["all","all"],["unsettled","unsettled"],["settled","✓ settled"]], colorFn: v => v === "settled" ? "#10b981" : "var(--text)" },
                       ].map(({ label, active, setActive, opts, colorFn }) => (
                         <div key={label} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                          <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>{label}</span>
+                          <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>{label}</span>
                           {opts.map(([v, display]) => {
                             const isActive = active === v;
                             const color = colorFn(v);
                             return (
                               <button key={v} className="btn" onClick={() => setActive(v)}
-                                style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${isActive ? color : "#1e2533"}`, background: isActive ? `${color}18` : "transparent", color: isActive ? color : "#4b5563" }}>{display}</button>
+                                style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${isActive ? color : "var(--border)"}`, background: isActive ? `${color}18` : "transparent", color: isActive ? color : "var(--text-faint)" }}>{display}</button>
                             );
                           })}
                         </div>
                       ))}
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>type</span>
+                        <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 52 }}>type</span>
                         <button className="btn" onClick={() => setFilterTypes([])}
-                          style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${filterTypes.length === 0 ? "#e2e8f0" : "#1e2533"}`, background: filterTypes.length === 0 ? "#e2e8f018" : "transparent", color: filterTypes.length === 0 ? "#e2e8f0" : "#4b5563" }}>all</button>
+                          style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${filterTypes.length === 0 ? "var(--text)" : "var(--border)"}`, background: filterTypes.length === 0 ? "#e2e8f018" : "transparent", color: filterTypes.length === 0 ? "var(--text)" : "var(--text-faint)" }}>all</button>
                         {TYPES.map(t => {
                           const on = filterTypes.includes(t.id);
                           return (
                             <button key={t.id} className="btn" onClick={() => setFilterTypes(prev => on ? prev.filter(x => x !== t.id) : [...prev, t.id])}
-                              style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${on ? t.color : "#1e2533"}`, background: on ? `${t.color}18` : "transparent", color: on ? t.color : "#4b5563" }}>{t.icon} {t.label}</button>
+                              style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${on ? t.color : "var(--border)"}`, background: on ? `${t.color}18` : "transparent", color: on ? t.color : "var(--text-faint)" }}>{t.icon} {t.label}</button>
                           );
                         })}
                       </div>
@@ -553,9 +581,9 @@ export default function App() {
               )}
 
               {loading ? (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "#1e2533", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
+                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
               ) : filtered.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "#1e2533", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>
+                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>
                   {bookings.length === 0 ? "NO BOOKINGS YET" : "NOTHING IN THIS CATEGORY"}
                 </div>
               ) : (
@@ -563,21 +591,21 @@ export default function App() {
                   {filtered.map(b => {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                     return (
-                      <div key={b.id} className="card" style={{ background: b.paid_by ? "#12151e" : "#0e1018", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "#374151"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
+                      <div key={b.id} className="card" style={{ background: b.paid_by ? "var(--surface)" : "var(--surface)", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "var(--text-tiny)"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
                         {canWrite && (
                           <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
                             {b.paid_by && b.travelers === "both" && (
                               <button className="btn" onClick={() => handleSettle(b.id, b.settled)}
-                                style={{ background: "transparent", color: b.settled ? "#64748b" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
+                                style={{ background: "transparent", color: b.settled ? "var(--text-faint)" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
                             )}
-                            <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "#64748b", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
+                            <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
                             {deleteConfirm === b.id ? (
                               <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
                                 <button className="btn" onClick={() => handleDelete(b.id)} style={{ background: "transparent", color: "#ef4444", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>delete?</button>
-                                <button className="btn" onClick={() => setDeleteConfirm(null)} style={{ background: "transparent", color: "#64748b", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>cancel</button>
+                                <button className="btn" onClick={() => setDeleteConfirm(null)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 11, padding: "2px 4px", fontFamily: "'Source Code Pro', monospace" }}>cancel</button>
                               </span>
                             ) : (
-                              <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "#374151", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
+                              <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
                             )}
                           </div>
                         )}
@@ -585,7 +613,7 @@ export default function App() {
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && b.type !== "activity" && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
                           {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
-                          <span style={{ fontSize: 14.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
+                          <span style={{ fontSize: 14.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
                           {b.date && <Meta label="date" value={b.date_end ? `${b.date} → ${b.date_end}` : b.date} />}
@@ -596,7 +624,7 @@ export default function App() {
                           {b.type !== "activity" && <Meta label="travelers" value={b.travelers || "both"} />}
                           {b.type !== "activity" && (b.paid_by ? <Meta label="paid by" value={b.paid_by} /> : <Meta label="paid by" value="—" />)}
                         </div>
-                        {b.notes && <div style={{ marginTop: 8, fontSize: 12.5, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                        {b.notes && <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
                       </div>
                     );
                   })}
@@ -609,9 +637,9 @@ export default function App() {
           {activeTab === "trip" && (
             <div>
               {loading ? (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "#1e2533", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
+                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
               ) : locationGroups.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "60px 0", color: "#1e2533", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO BOOKINGS YET</div>
+                <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO BOOKINGS YET</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                   {locationGroups.map((group, gi) => {
@@ -627,26 +655,26 @@ export default function App() {
                         {/* Location hero header */}
                         <div
                           onClick={() => toggleGroup(group.location + gi)}
-                          style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "#12151e", border: "1px solid #1e2533" }}
+                          style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "var(--surface)", border: "1px solid var(--border)" }}
                         >
                           {vibeImg && (
-                            <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center", opacity: isPast ? 0.25 : 0.35, filter: "saturate(0.7)" }} />
+                            <div className="hero-img" style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center" }} />
                           )}
-                          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(15,17,23,0.92) 40%, rgba(15,17,23,0.4) 100%)" }} />
+                          <div style={{ position: "absolute", inset: 0, background: "var(--hero-overlay)" }} />
                           <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0ea5e9", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
+                              {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
                               <div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "#f1f5f9" : isPast ? "#4b5563" : "#e2e8f0", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "var(--text)" : isPast ? "var(--text-faint)" : "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                                   {group.location}
                                 </div>
-                                <div style={{ fontSize: 11, color: isActive ? "#0ea5e9" : "#374151", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
+                                <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
                                   {fmtDateShort(group.startDate)}{group.startDate !== group.endDate ? ` – ${fmtDateShort(group.endDate)}` : ""}
                                   {isActive && " · now"}
                                 </div>
                               </div>
                             </div>
-                            <span style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{isCollapsed ? "▸" : "▾"}</span>
+                            <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{isCollapsed ? "▸" : "▾"}</span>
                           </div>
                         </div>
 
@@ -654,23 +682,23 @@ export default function App() {
                           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                             {/* Hotel banner */}
                             {hotelBooking && (
-                              <div style={{ background: "#12101f", border: "1px solid #8b5cf630", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                              <div style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                   <span style={{ fontSize: 13 }}>🏨</span>
-                                  <span style={{ fontSize: 13, color: "#c4b5fd", fontFamily: "'Georgia', serif" }}>{hotelBooking.name}</span>
+                                  <span style={{ fontSize: 13, color: "var(--hotel-text)", fontFamily: "'Georgia', serif" }}>{hotelBooking.name}</span>
                                 </div>
                                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                                   {hotelBooking.date_end && (
-                                    <span style={{ fontSize: 10, color: "#6d28d9", fontFamily: "'Source Code Pro', monospace" }}>
+                                    <span style={{ fontSize: 10, color: "var(--hotel-text)", fontFamily: "'Source Code Pro', monospace" }}>
                                       {fmtDateShort(hotelBooking.date)} → {fmtDateShort(hotelBooking.date_end)}
                                     </span>
                                   )}
                                   <a href={mapsLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
-                                    style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid #1e2533", borderRadius: 4, padding: "2px 7px" }}
+                                    style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
                                     onClick={e => e.stopPropagation()}>map ↗</a>
                                   {platformLink(hotelBooking) && (
                                     <a href={platformLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
-                                      style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid #1e2533", borderRadius: 4, padding: "2px 7px" }}
+                                      style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
                                       onClick={e => e.stopPropagation()}>booking ↗</a>
                                   )}
                                 </div>
@@ -688,14 +716,14 @@ export default function App() {
                                   style={{ marginBottom: 12, paddingLeft: 0 }}>
                                   {/* Day header */}
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                                    {isToday && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#0ea5e9", display: "inline-block" }} />}
-                                    <span style={{ fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: isToday ? "#0ea5e9" : "#374151", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                                    {isToday && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />}
+                                    <span style={{ fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: isToday ? "var(--accent)" : "var(--text-tiny)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
                                       {fmtDate(d)}{isToday ? " · today" : ""}
                                     </span>
                                   </div>
 
                                   {dayBksFiltered.length === 0 && (
-                                    <div style={{ fontSize: 11, color: "#1e2533", fontFamily: "'Source Code Pro', monospace", paddingLeft: 14 }}>—</div>
+                                    <div style={{ fontSize: 11, color: "var(--border)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 14 }}>—</div>
                                   )}
 
                                   {dayBksFiltered.map(b => {
@@ -706,45 +734,45 @@ export default function App() {
                                     return (
                                       <div key={b.id} className="trip-card"
                                         onClick={() => hasDetails && toggleCard(b.id)}
-                                        style={{ background: "#12151e", borderRadius: 7, padding: "10px 14px", marginBottom: 6, borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
+                                        style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", marginBottom: 6, borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                                             <span style={{ fontSize: 14 }}>{t.icon}</span>
-                                            <span style={{ fontSize: 13.5, color: "#e2e8f0", fontFamily: "'Georgia', serif", lineHeight: 1.3 }}>{b.name}</span>
+                                            <span style={{ fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.3 }}>{b.name}</span>
                                           </div>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                                             {b.price && b.type !== "activity" && (
                                               <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>
                                             )}
-                                            {hasDetails && <span style={{ fontSize: 9, color: "#374151" }}>{isExpanded ? "▲" : "▼"}</span>}
+                                            {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
                                         </div>
 
                                         {isExpanded && (
-                                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid #1e2533", display: "flex", flexDirection: "column", gap: 6 }}>
-                                            {b.date_end && <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace" }}>until {fmtDate(b.date_end)}</div>}
+                                          <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+                                            {b.date_end && <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>until {fmtDate(b.date_end)}</div>}
                                             {b.reference && (
                                               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                                <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span>
-                                                <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span>
+                                                <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span>
+                                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span>
                                               </div>
                                             )}
                                             {b.platform && (
                                               <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                                <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span>
-                                                <span style={{ fontSize: 12, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span>
+                                                <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span>
+                                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span>
                                               </div>
                                             )}
-                                            {b.notes && <div style={{ fontSize: 12, color: "#4b5563", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                                            {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
                                             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                                               {(b.type === "hotel" || b.type === "activity" || b.type === "ticket") && (
                                                 <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
-                                                  style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid #1e2533", borderRadius: 4, padding: "3px 8px" }}
+                                                  style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
                                                   onClick={e => e.stopPropagation()}>📍 maps</a>
                                               )}
                                               {platformLink(b) && (
                                                 <a href={platformLink(b)} target="_blank" rel="noopener noreferrer"
-                                                  style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid #1e2533", borderRadius: 4, padding: "3px 8px" }}
+                                                  style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
                                                   onClick={e => e.stopPropagation()}>↗ {b.platform}</a>
                                               )}
                                             </div>
@@ -769,7 +797,7 @@ export default function App() {
           {/* ── SUMMARY TAB ── */}
           {activeTab === "summary" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-              {activeCurrencies.length === 0 && <div style={{ color: "#374151", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>}
+              {activeCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No bookings with prices yet.</div>}
 
               {activeCurrencies.length > 0 && (() => {
                 const owedByCurrency = activeCurrencies
@@ -785,10 +813,10 @@ export default function App() {
                 const totalDKK = allConverted ? dkkAmounts.reduce((s, v) => s + v, 0) : null;
                 const rateTs = rates?.time_last_update_utc ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
                 return (
-                  <div style={{ background: "#0d1019", borderRadius: 10, padding: 20, border: "1px solid #252d3d" }}>
+                  <div style={{ background: "var(--bg)", borderRadius: 10, padding: 20, border: "1px solid #252d3d" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
-                      <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid #1e2533", borderRadius: 4, color: "#374151", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
+                      <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
                     </div>
                     {owedByCurrency.length === 0 ? (
                       <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
@@ -800,32 +828,32 @@ export default function App() {
                           const dkk = toDKK(pOwes, currency);
                           return (
                             <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                              <div style={{ fontSize: 14, color: "#e2e8f0" }}>
+                              <div style={{ fontSize: 14, color: "var(--text)" }}>
                                 {pOwes > 0 ? "Peter owes friend" : "Friend owes Peter"}
                                 <span style={{ color: pOwes > 0 ? "#f97316" : "#10b981", fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
                               </div>
-                              {dkk !== null && <span style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
+                              {dkk !== null && <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
                             </div>
                           );
                         })}
                         {owedByCurrency.length > 1 && totalDKK !== null && (
-                          <div style={{ borderTop: "1px solid #1e2533", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                            <div style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
+                          <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                            <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
                             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "#64748b" }}>DKK</span>
+                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
                             </div>
                           </div>
                         )}
                         {owedByCurrency.length === 1 && totalDKK !== null && owedByCurrency[0].currency !== "DKK" && (
-                          <div style={{ borderTop: "1px solid #1e2533", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                          <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
                             <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "#64748b" }}>DKK</span>
+                              {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
                             </div>
                           </div>
                         )}
                       </>
                     )}
-                    {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "#1e2533", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
+                    {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "var(--border)", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
                   </div>
                 );
               })()}
@@ -836,28 +864,28 @@ export default function App() {
                 const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
                 return (
                   <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                    <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
-                    <SummaryCard label="Total committed" value={fmt2(total)} color="#e2e8f0" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
+                    <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ₔ {currency} ₔ ─────────────────────────</div>
+                    <SummaryCard label="Total committed" value={fmt2(total)} color="var(--text)" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
                     {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
-                    <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
-                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
+                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>Settlement</div>
                       {Math.abs(pOwes) < 0.01 ? (
                         <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
                       ) : pOwes > 0 ? (
-                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span></div>
+                        <div style={{ fontSize: 14, color: "var(--text)" }}>Peter owes friend <span style={{ color: "#f97316", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(pOwes)}</span></div>
                       ) : (
-                        <div style={{ fontSize: 14, color: "#e2e8f0" }}>Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span></div>
+                        <div style={{ fontSize: 14, color: "var(--text)" }}>Friend owes Peter <span style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(Math.abs(pOwes))}</span></div>
                       )}
                     </div>
-                    <div style={{ background: "#151820", borderRadius: 8, padding: 20, border: "1px solid #1e2533" }}>
-                      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
+                    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
+                      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 14 }}>By category</div>
                       {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
                         const catTotal = bookings.filter(b => b.currency === currency && b.price && b.type === t.id).reduce((s, b) => s + parseFloat(b.price), 0);
                         if (catTotal === 0) return null;
                         return (
                           <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                             <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
-                            <span style={{ fontSize: 13, color: "#94a3b8", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(catTotal)}</span>
+                            <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{fmt2(catTotal)}</span>
                           </div>
                         );
                       })}
@@ -868,7 +896,7 @@ export default function App() {
             </div>
           )}
 
-          <div style={{ textAlign: "center", marginTop: 48, color: "#1a1f2e", fontSize: 11, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em" }}>
+          <div style={{ textAlign: "center", marginTop: 48, color: "var(--surface2)", fontSize: 11, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em" }}>
             PETER + 1 · BEIJING → YUNNAN → ZHANGJIAJIE → INCHEON
             <br /><span style={{ fontSize: 10, opacity: 0.5 }}>updated {BUILD}</span>
           </div>
@@ -887,21 +915,21 @@ export default function App() {
 function Meta({ label, value, highlight, mono }) {
   return (
     <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-      <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
-      <span style={{ fontSize: 12.5, color: highlight ? "#10b981" : "#94a3b8", fontFamily: mono ? "'Source Code Pro', monospace" : "'Georgia', serif" }}>{value}</span>
+      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+      <span style={{ fontSize: 12.5, color: highlight ? "#10b981" : "var(--text-muted)", fontFamily: mono ? "'Source Code Pro', monospace" : "'Georgia', serif" }}>{value}</span>
     </span>
   );
 }
 
 function SummaryCard({ label, value, color, sub }) {
   return (
-    <div style={{ background: "#151820", borderRadius: 8, padding: "16px 20px", border: "1px solid #1e2533" }}>
-      <div style={{ fontSize: 11, color: "#64748b", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
+    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "16px 20px", border: "1px solid var(--border)" }}>
+      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
       <div style={{ fontSize: 24, fontFamily: "'Playfair Display', serif", color, marginBottom: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
     </div>
   );
 }
 
-const inp = { width: "100%", background: "#0f1117", border: "1px solid #1e2533", borderRadius: 6, padding: "9px 12px", color: "#e2e8f0", fontSize: 13, fontFamily: "'Source Code Pro', monospace" };
+const inp = { width: "100%", background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "9px 12px", color: "var(--text)", fontSize: 13, fontFamily: "'Source Code Pro', monospace" };
 const btnStyle = { padding: "8px 16px", borderRadius: 6, fontSize: 12, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" };
