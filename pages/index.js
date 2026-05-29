@@ -297,11 +297,10 @@ export default function App() {
     locations.forEach(loc => {
       if (locationImages[loc]) return; // already fetched
       const query = encodeURIComponent(`${loc} China landscape travel`);
-      fetch(`https://api.unsplash.com/search/photos?query=${query}&per_page=1&orientation=landscape&client_id=xNDcEBjJcSp7z6aBpMWpDLfYtHylrv-z8mw2wqHxnx4`)
+      fetch(`/api/unsplash?location=${encodeURIComponent(loc)}`)
         .then(r => r.json())
         .then(data => {
-          const url = data?.results?.[0]?.urls?.regular;
-          if (url) setLocationImages(prev => ({ ...prev, [loc]: url }));
+          if (data?.url) setLocationImages(prev => ({ ...prev, [loc]: data.url }));
         })
         .catch(() => {});
     });
