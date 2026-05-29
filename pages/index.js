@@ -178,6 +178,7 @@ export default function App() {
   const [ratesLoading, setRatesLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState({});
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [locationImages, setLocationImages] = useState({});
   const todayRef = useRef(null);
 
   useEffect(() => {
@@ -288,6 +289,23 @@ export default function App() {
   }
 
   useEffect(() => { if (activeTab === "summary") fetchRates(); }, [activeTab]);
+
+  // Fetch Unsplash vibe image for each location when trip tab opens
+  useEffect(() => {
+    if (activeTab !== "trip") return;
+    const locations = [...new Set(bookings.map(b => b.location).filter(Boolean))];
+    locations.forEach(loc => {
+      if (locationImages[loc]) return; // already fetched
+      const query = encodeURIComponent(`${loc} China landscape travel`);
+      fetch(`https://api.unsplash.com/search/photos?query=${query}&per_page=1&orientation=landscape&client_id=xNDcEBjJcSp7z6aBpMWpDLfYtHylrv-z8mw2wqHxnx4`)
+        .then(r => r.json())
+        .then(data => {
+          const url = data?.results?.[0]?.urls?.regular;
+          if (url) setLocationImages(prev => ({ ...prev, [loc]: url }));
+        })
+        .catch(() => {});
+    });
+  }, [activeTab, bookings]);
 
   const filtered = bookings
     .filter(b => filterTypes.length === 0 || filterTypes.includes(b.type))
@@ -603,23 +621,34 @@ export default function App() {
                     const isCollapsed = collapsedGroups[group.location + gi];
                     const hotelBooking = bookings.find(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
 
+                    const vibeImg = locationImages[group.location];
+
                     return (
-                      <div key={gi} style={{ marginBottom: 24, opacity: isPast ? 0.5 : 1 }}>
-                        {/* Location header */}
+                      <div key={gi} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1 }}>
+                        {/* Location hero header */}
                         <div
                           onClick={() => toggleGroup(group.location + gi)}
-                          style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: isCollapsed ? 0 : 14, cursor: "pointer", padding: "10px 0" }}
+                          style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "#12151e", border: "1px solid #1e2533" }}
                         >
-                          <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 10 }}>
-                            {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0ea5e9", display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
-                            <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, fontWeight: 600, color: isActive ? "#f1f5f9" : isPast ? "#374151" : "#cbd5e1", letterSpacing: "-0.01em" }}>
-                              {group.location}
-                            </span>
-                            <span style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>
-                              {fmtDateShort(group.startDate)}{group.startDate !== group.endDate ? ` – ${fmtDateShort(group.endDate)}` : ""}
-                            </span>
+                          {vibeImg && (
+                            <div style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center", opacity: isPast ? 0.25 : 0.35, filter: "saturate(0.7)" }} />
+                          )}
+                          <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to right, rgba(15,17,23,0.92) 40%, rgba(15,17,23,0.4) 100%)" }} />
+                          <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0ea5e9", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
+                              <div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "#f1f5f9" : isPast ? "#4b5563" : "#e2e8f0", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                                  {group.location}
+                                </div>
+                                <div style={{ fontSize: 11, color: isActive ? "#0ea5e9" : "#374151", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
+                                  {fmtDateShort(group.startDate)}{group.startDate !== group.endDate ? ` – ${fmtDateShort(group.endDate)}` : ""}
+                                  {isActive && " · now"}
+                                </div>
+                              </div>
+                            </div>
+                            <span style={{ fontSize: 11, color: "#374151", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{isCollapsed ? "▸" : "▾"}</span>
                           </div>
-                          <span style={{ fontSize: 10, color: "#374151", fontFamily: "'Source Code Pro', monospace" }}>{isCollapsed ? "▸" : "▾"}</span>
                         </div>
 
                         {!isCollapsed && (
