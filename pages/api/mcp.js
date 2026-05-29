@@ -13,16 +13,18 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["flight", "hotel", "train", "ticket"], description: "Type of booking" },
+        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"], description: "Type of booking. Use 'activity' for plans that don't involve tracked expenses." },
         name: { type: "string", description: "Name / description of the booking" },
-        date: { type: "string", description: "Date in YYYY-MM-DD format" },
-        price: { type: "number", description: "Price as a number" },
+        date: { type: "string", description: "Start date in YYYY-MM-DD format" },
+        date_end: { type: "string", description: "End/checkout date in YYYY-MM-DD format — use for hotels (checkout), multi-day activities, etc." },
+        location: { type: "string", description: "City or region, e.g. 'Beijing', 'Zhangjiajie'. Used to group bookings in the trip view." },
+        price: { type: "number", description: "Price as a number — omit for free activities" },
         currency: { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency — defaults to USD" },
-        platform: { type: "string", description: "Booking platform e.g. Trip.com, Klook" },
+        platform: { type: "string", description: "Booking platform e.g. Trip.com, Klook, Booking.com" },
         reference: { type: "string", description: "Booking reference or flight number(s)" },
         notes: { type: "string", description: "Extra details — timings, room type, etc." },
         travelers: { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for — defaults to both" },
-        paid_by: { type: "string", enum: ["peter", "friend"], description: "Who paid" },
+        paid_by: { type: "string", enum: ["peter", "friend"], description: "Who paid — omit if unpaid" },
       },
       required: ["type", "name"],
     },
@@ -33,7 +35,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "all"], description: "Filter by type — omit for all" },
+        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "all"], description: "Filter by type — omit for all" },
       },
     },
   },
@@ -65,15 +67,22 @@ async function add_booking(args) {
   const { data, error } = await supabase
     .from("bookings")
     .insert({
-      type: args.type, name: args.name, date: args.date ?? null,
-      price: args.price ?? null, currency: args.currency ?? "USD",
-      platform: args.platform ?? null, reference: args.reference ?? null,
-      notes: args.notes ?? null, travelers: args.travelers ?? "both",
+      type: args.type,
+      name: args.name,
+      date: args.date ?? null,
+      date_end: args.date_end ?? null,
+      location: args.location ?? null,
+      price: args.price ?? null,
+      currency: args.currency ?? "USD",
+      platform: args.platform ?? null,
+      reference: args.reference ?? null,
+      notes: args.notes ?? null,
+      travelers: args.travelers ?? "both",
       paid_by: args.paid_by ?? null,
     })
     .select().single();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
-  return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}` }] };
+  return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"}${data.date_end ? ` → ${data.date_end}` : ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}${data.location ? ` · ${data.location}` : ""}` }] };
 }
 
 async function list_bookings(args) {
@@ -85,10 +94,12 @@ async function list_bookings(args) {
   const lines = data.map(b =>
     `[${b.type.toUpperCase()}] ${b.name}` +
     (b.date ? ` · ${b.date}` : "") +
+    (b.date_end ? ` → ${b.date_end}` : "") +
+    (b.location ? ` · ${b.location}` : "") +
     (b.price != null ? ` · ${b.price} ${b.currency}` : "") +
     (b.reference ? ` · ${b.reference}` : "") +
     (b.travelers !== "both" ? ` · ${b.travelers} only` : "") +
-    `  (id: ${b.id})`
+    ` (id: ${b.id})`
   );
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${lines.join("\n")}` }] };
 }
@@ -110,35 +121,31 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.0.0" });
+  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.1.0" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { id, method, params } = req.body;
-  try {
-    switch (method) {
-      case "initialize":
-        return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.0.0" } } });
-      case "notifications/initialized":
-        return res.status(204).end();
-      case "ping":
-        return res.json({ jsonrpc: "2.0", id, result: {} });
-      case "tools/list":
-        return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
-      case "tools/call": {
-        const name = params?.name;
-        const args = params?.arguments ?? {};
-        let result;
-        if (name === "add_booking") result = await add_booking(args);
-        else if (name === "list_bookings") result = await list_bookings(args);
-        else if (name === "settle_booking") result = await settle_booking(args);
-        else if (name === "delete_booking") result = await delete_booking(args);
-        else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
-        return res.json({ jsonrpc: "2.0", id, result });
-      }
-      default:
-        return res.status(400).json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
-    }
-  } catch (e) {
-    return res.status(500).json({ jsonrpc: "2.0", id, error: { code: -32603, message: e.message } });
+  let body;
+  try { body = typeof req.body === "string" ? JSON.parse(req.body) : req.body; }
+  catch { return res.status(400).json({ error: "Invalid JSON" }); }
+
+  const { jsonrpc, id, method, params } = body;
+
+  if (method === "initialize") {
+    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.1.0" } } });
   }
+  if (method === "tools/list") {
+    return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
+  }
+  if (method === "tools/call") {
+    const { name, arguments: args } = params;
+    let result;
+    if (name === "add_booking") result = await add_booking(args);
+    else if (name === "list_bookings") result = await list_bookings(args);
+    else if (name === "settle_booking") result = await settle_booking(args);
+    else if (name === "delete_booking") result = await delete_booking(args);
+    else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
+    return res.json({ jsonrpc: "2.0", id, result });
+  }
+
+  return res.json({ jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } });
 }
