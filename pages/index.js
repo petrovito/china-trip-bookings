@@ -837,8 +837,6 @@ export default function App() {
             </div>
           )}
 
-          )}
-
           {/* ── SUMMARY MODAL ── */}
           {showSummary && (
             <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
