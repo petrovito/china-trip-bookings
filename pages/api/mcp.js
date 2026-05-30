@@ -61,6 +61,19 @@ const TOOLS = [
       required: ["id"],
     },
   },
+  {
+    name: "set_pass",
+    description: "Store a decoded barcode/QR code for a booking so it can be displayed offline in the pass viewer",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:          { type: "string", description: "The UUID of the booking" },
+        pass_code:   { type: "string", description: "The decoded text content of the barcode or QR code" },
+        pass_format: { type: "string", description: "Barcode format: QR_CODE, PDF_417, AZTEC, CODE_128, CODE_39, DATA_MATRIX, etc. Defaults to QR_CODE." },
+      },
+      required: ["id", "pass_code"],
+    },
+  },
 ];
 
 async function add_booking(args) {
@@ -99,6 +112,7 @@ async function list_bookings(args) {
     (b.price != null ? ` · ${b.price} ${b.currency}` : "") +
     (b.reference ? ` · ${b.reference}` : "") +
     (b.travelers !== "both" ? ` · ${b.travelers} only` : "") +
+    (b.pass_code ? ` · 🎫 ${b.pass_format}` : "") +
     ` (id: ${b.id})`
   );
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${lines.join("\n")}` }] };
@@ -116,12 +130,24 @@ async function delete_booking(args) {
   return { content: [{ type: "text", text: `✓ Booking ${args.id} deleted.` }] };
 }
 
+async function set_pass(args) {
+  const { id, pass_code, pass_format = "QR_CODE" } = args;
+  const { data, error } = await supabase
+    .from("bookings")
+    .update({ pass_code, pass_format })
+    .eq("id", id)
+    .select("name")
+    .single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Pass set for "${data.name}" (${pass_format})` }] };
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.1.0" });
+  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.2.0" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   let body;
@@ -131,7 +157,7 @@ export default async function handler(req, res) {
   const { jsonrpc, id, method, params } = body;
 
   if (method === "initialize") {
-    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.1.0" } } });
+    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.2.0" } } });
   }
   if (method === "tools/list") {
     return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
@@ -143,6 +169,7 @@ export default async function handler(req, res) {
     else if (name === "list_bookings") result = await list_bookings(args);
     else if (name === "settle_booking") result = await settle_booking(args);
     else if (name === "delete_booking") result = await delete_booking(args);
+    else if (name === "set_pass") result = await set_pass(args);
     else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
     return res.json({ jsonrpc: "2.0", id, result });
   }
