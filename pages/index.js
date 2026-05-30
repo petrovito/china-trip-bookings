@@ -21,6 +21,18 @@ const EMPTY_FORM = {
 // Types excluded from expense tracking
 const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food"];
 
+const TODO_CATS = [
+  { id: "pack",   label: "Pack",   icon: "🧳" },
+  { id: "book",   label: "Book",   icon: "📋" },
+  { id: "docs",   label: "Docs",   icon: "🛂" },
+  { id: "health", label: "Health", icon: "💊" },
+  { id: "tech",   label: "Tech",   icon: "📱" },
+  { id: "do",     label: "Do",     icon: "🎯" },
+];
+const EMPTY_TODO = { title: "", category: "pack", assignee: "both" };
+// Booking types that can have a pass/QR attached
+const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity"];
+
 function fmt(price, currency) {
   if (!price) return "—";
   return `${parseFloat(price).toFixed(2)} ${currency || "USD"}`;
@@ -181,7 +193,18 @@ export default function App() {
   const [locationImages, setLocationImages] = useState({});
   const [showSummary, setShowSummary] = useState(false);
   const [expandedFoodDays, setExpandedFoodDays] = useState({});
+  // Todos
+  const [todos, setTodos] = useState([]);
+  const [todoForm, setTodoForm] = useState(EMPTY_TODO);
+  const [showTodoForm, setShowTodoForm] = useState(false);
+  const [todoFilterCat, setTodoFilterCat] = useState("all");
+  const [todoFilterAssignee, setTodoFilterAssignee] = useState("all");
+  // Pass viewer
+  const [passViewer, setPassViewer] = useState(null); // { id, name, dataUrl }
+  const [savedPasses, setSavedPasses] = useState({});  // { [bookingId]: true }
   const todayRef = useRef(null);
+  const passFileRef = useRef(null);
+  const passUploadForRef = useRef(null);
 
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
@@ -190,8 +213,14 @@ export default function App() {
     setFilterPaidBy(localStorage.getItem("fp") || "all");
     setWriteToken(localStorage.getItem("wt") || "");
     const sf = localStorage.getItem("sf"); if (sf !== null) setShowFilters(sf !== "0");
-    const tab = localStorage.getItem("tab"); if (tab && ["trip","expenses"].includes(tab)) setActiveTab(tab);
+    const tab = localStorage.getItem("tab"); if (tab && ["trip","todos","expenses"].includes(tab)) setActiveTab(tab);
     try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
+    setTodoFilterCat(localStorage.getItem("tfc") || "all");
+    setTodoFilterAssignee(localStorage.getItem("tfa") || "all");
+    // Scan localStorage for saved passes
+    const passes = {};
+    Object.keys(localStorage).forEach(k => { if (k.startsWith("pass_")) passes[k.replace("pass_", "")] = true; });
+    setSavedPasses(passes);
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
@@ -200,7 +229,10 @@ export default function App() {
   useEffect(() => { localStorage.setItem("sf",  showFilters ? "1" : "0"); }, [showFilters]);
   useEffect(() => { localStorage.setItem("tab", activeTab); }, [activeTab]);
   useEffect(() => { localStorage.setItem("cg",  JSON.stringify(collapsedGroups)); }, [collapsedGroups]);
+  useEffect(() => { localStorage.setItem("tfc", todoFilterCat); }, [todoFilterCat]);
+  useEffect(() => { localStorage.setItem("tfa", todoFilterAssignee); }, [todoFilterAssignee]);
   useEffect(() => { fetchBookings(); }, []);
+  useEffect(() => { fetchTodos(); }, []);
 
   // Scroll to today when switching to trip tab
   useEffect(() => {
@@ -216,10 +248,86 @@ export default function App() {
       const text = await res.text();
       if (!res.ok) throw new Error(`${res.status}: ${text}`);
       const data = JSON.parse(text);
-      setBookings(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setBookings(list);
+      localStorage.setItem("bookings_cache", JSON.stringify(list));
     } catch (e) {
-      setError(e.message); setBookings([]);
+      const cached = localStorage.getItem("bookings_cache");
+      if (cached) { try { setBookings(JSON.parse(cached)); } catch {} }
+      else { setError(e.message); setBookings([]); }
     } finally { setLoading(false); }
+  }
+
+  async function fetchTodos() {
+    try {
+      const res = await fetch("/api/todos");
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      setTodos(list);
+      localStorage.setItem("todos_cache", JSON.stringify(list));
+    } catch {
+      const cached = localStorage.getItem("todos_cache");
+      if (cached) try { setTodos(JSON.parse(cached)); } catch {}
+    }
+  }
+
+  async function handleAddTodo() {
+    if (!todoForm.title.trim()) return;
+    const res = await fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
+    if (res.status === 401) { showToast("Wrong password", false); return; }
+    const todo = await res.json();
+    setTodos(prev => { const u = [...prev, todo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodoForm(EMPTY_TODO); setShowTodoForm(false); showToast("Todo added");
+  }
+
+  async function handleToggleTodo(todo) {
+    const updated = { ...todo, done: !todo.done };
+    setTodos(prev => { const u = prev.map(t => t.id === todo.id ? updated : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    const res = await fetch(`/api/todos/${todo.id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ done: !todo.done }) });
+    if (res.status === 401) {
+      setTodos(prev => { const u = prev.map(t => t.id === todo.id ? todo : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      showToast("Wrong password", false);
+    }
+  }
+
+  async function handleDeleteTodo(id) {
+    const res = await fetch(`/api/todos/${id}`, { method: "DELETE", headers: authedHeaders });
+    if (res.status === 401) { showToast("Wrong password", false); return; }
+    setTodos(prev => { const u = prev.filter(t => t.id !== id); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    showToast("Todo deleted");
+  }
+
+  function handlePassOpen(b) {
+    const saved = localStorage.getItem(`pass_${b.id}`);
+    if (saved) {
+      setPassViewer({ id: b.id, name: b.name, dataUrl: saved });
+    } else {
+      passUploadForRef.current = b;
+      passFileRef.current?.click();
+    }
+  }
+
+  function handlePassFile(e) {
+    const file = e.target.files?.[0];
+    if (!file || !passUploadForRef.current) return;
+    const b = passUploadForRef.current;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const dataUrl = ev.target.result;
+      localStorage.setItem(`pass_${b.id}`, dataUrl);
+      setSavedPasses(prev => ({ ...prev, [b.id]: true }));
+      setPassViewer({ id: b.id, name: b.name, dataUrl });
+      showToast("Pass saved ✓");
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  }
+
+  function handlePassRemove(bookingId) {
+    localStorage.removeItem(`pass_${bookingId}`);
+    setSavedPasses(prev => { const n = { ...prev }; delete n[bookingId]; return n; });
+    setPassViewer(null);
+    showToast("Pass removed");
   }
 
   async function handleSubmit() {
@@ -443,7 +551,7 @@ export default function App() {
 
             {/* Tabs */}
             <div style={{ display: "flex", gap: 0, marginTop: 20, borderBottom: "1px solid var(--border)" }}>
-              {[["trip", "✦ trip"], ["expenses", "expenses"]].map(([tab, label]) => (
+              {[["trip", "✦ trip"], ["todos", "todos ✓"], ["expenses", "expenses"]].map(([tab, label]) => (
                 <div key={tab} className="tab" onClick={() => setActiveTab(tab)} style={{ padding: "8px 16px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", color: activeTab === tab ? "var(--accent)" : "var(--text-faint)", borderBottom: activeTab === tab ? "2px solid var(--accent)" : "2px solid transparent", marginBottom: -1 }}>
                   {label}
                 </div>
@@ -607,6 +715,10 @@ export default function App() {
                               <button className="btn" onClick={() => handleSettle(b.id, b.settled)}
                                 style={{ background: "transparent", color: b.settled ? "var(--text-faint)" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
                             )}
+                            {PASS_TYPES.includes(b.type) && (
+                              <button className="btn" onClick={() => handlePassOpen(b)}
+                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: savedPasses[b.id] ? 0.9 : 0.25, lineHeight: 1 }} title={savedPasses[b.id] ? "View pass" : "Add pass"}>🎫</button>
+                            )}
                             <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
                             {deleteConfirm === b.id ? (
                               <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -617,6 +729,11 @@ export default function App() {
                               <button className="btn" onClick={() => setDeleteConfirm(b.id)} style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>┕</button>
                             )}
                           </div>
+                        )}
+                        {/* Persistent pass badge — visible even when locked */}
+                        {savedPasses[b.id] && !canWrite && PASS_TYPES.includes(b.type) && (
+                          <button className="btn" onClick={() => handlePassOpen(b)}
+                            style={{ position: "absolute", top: 12, right: 12, background: "transparent", fontSize: 14, padding: "2px 4px", border: "none", lineHeight: 1 }}>🎫</button>
                         )}
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
@@ -640,6 +757,150 @@ export default function App() {
                 </div>
               )}
             </>
+          )}
+
+          {/* ── TODOS TAB ── */}
+          {activeTab === "todos" && (
+            <div>
+              {/* Progress bar */}
+              {todos.length > 0 && (() => {
+                const done = todos.filter(t => t.done).length;
+                const pct = Math.round((done / todos.length) * 100);
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>progress</span>
+                      <span style={{ fontSize: 11, color: pct === 100 ? "#10b981" : "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{done}/{todos.length}</span>
+                    </div>
+                    <div style={{ height: 3, background: "var(--border)", borderRadius: 2 }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: pct === 100 ? "#10b981" : "var(--accent)", borderRadius: 2, transition: "width 0.3s" }} />
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Add todo form */}
+              {canWrite && (
+                <div style={{ marginBottom: 18 }}>
+                  {!showTodoForm ? (
+                    <button className="btn" onClick={() => setShowTodoForm(true)}
+                      style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-faint)", letterSpacing: "0.05em" }}>
+                      + add todo
+                    </button>
+                  ) : (
+                    <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 16, border: "1px solid var(--border)" }}>
+                      <input
+                        placeholder="What needs doing? *"
+                        value={todoForm.title}
+                        onChange={e => setTodoForm(f => ({ ...f, title: e.target.value }))}
+                        onKeyDown={e => e.key === "Enter" && handleAddTodo()}
+                        autoFocus
+                        style={{ ...inp, marginBottom: 10 }}
+                      />
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+                        {TODO_CATS.map(c => (
+                          <button key={c.id} className="btn" onClick={() => setTodoForm(f => ({ ...f, category: c.id }))}
+                            style={{ padding: "5px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.category === c.id ? "var(--text)" : "var(--border)"}`, background: todoForm.category === c.id ? "var(--surface-hover)" : "transparent", color: todoForm.category === c.id ? "var(--text)" : "var(--text-faint)" }}>
+                            {c.icon} {c.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12 }}>
+                        <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>for</span>
+                        {["both", "peter", "friend"].map(v => (
+                          <button key={v} className="btn" onClick={() => setTodoForm(f => ({ ...f, assignee: v }))}
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.assignee === v ? "var(--text)" : "var(--border)"}`, background: todoForm.assignee === v ? "var(--surface-hover)" : "transparent", color: todoForm.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm(EMPTY_TODO); }}
+                          style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
+                        <button className="btn" onClick={handleAddTodo} disabled={!todoForm.title.trim()}
+                          style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !todoForm.title.trim() ? 0.5 : 1 }}>Add</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Filters */}
+              {todos.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    <button className="btn" onClick={() => setTodoFilterCat("all")}
+                      style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterCat === "all" ? "var(--text)" : "var(--border)"}`, background: todoFilterCat === "all" ? "var(--surface-hover)" : "transparent", color: todoFilterCat === "all" ? "var(--text)" : "var(--text-faint)" }}>all</button>
+                    {TODO_CATS.filter(c => todos.some(t => t.category === c.id)).map(c => (
+                      <button key={c.id} className="btn" onClick={() => setTodoFilterCat(todoFilterCat === c.id ? "all" : c.id)}
+                        style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterCat === c.id ? "var(--text)" : "var(--border)"}`, background: todoFilterCat === c.id ? "var(--surface-hover)" : "transparent", color: todoFilterCat === c.id ? "var(--text)" : "var(--text-faint)" }}>
+                        {c.icon} {c.label}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 28 }}>for</span>
+                    {["all", "both", "peter", "friend"].map(v => (
+                      <button key={v} className="btn" onClick={() => setTodoFilterAssignee(v)}
+                        style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Todo list */}
+              {(() => {
+                const filteredTodos = todos
+                  .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
+                  .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee);
+                if (todos.length === 0) return (
+                  <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO TODOS YET</div>
+                );
+                if (filteredTodos.length === 0) return (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>nothing here</div>
+                );
+                const catsToShow = todoFilterCat === "all"
+                  ? TODO_CATS.filter(c => filteredTodos.some(t => t.category === c.id))
+                  : TODO_CATS.filter(c => c.id === todoFilterCat);
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+                    {catsToShow.map(cat => {
+                      const catTodos = filteredTodos.filter(t => t.category === cat.id);
+                      if (!catTodos.length) return null;
+                      const pending = catTodos.filter(t => !t.done);
+                      const done = catTodos.filter(t => t.done);
+                      return (
+                        <div key={cat.id}>
+                          {todoFilterCat === "all" && (
+                            <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>
+                              {cat.icon} {cat.label}{pending.length > 0 ? ` · ${pending.length} left` : " · done ✓"}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            {[...pending, ...done].map(todo => (
+                              <div key={todo.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "10px 14px", opacity: todo.done ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                                <button className="btn" onClick={() => handleToggleTodo(todo)}
+                                  style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${todo.done ? "#10b981" : "var(--border2)"}`, background: todo.done ? "#10b98120" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#10b981", padding: 0 }}>
+                                  {todo.done ? "✓" : ""}
+                                </button>
+                                <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", textDecoration: todo.done ? "line-through" : "none", lineHeight: 1.4 }}>{todo.title}</span>
+                                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                                  {todo.assignee !== "both" && (
+                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee}</span>
+                                  )}
+                                  {canWrite && (
+                                    <button className="btn" onClick={() => handleDeleteTodo(todo.id)}
+                                      style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 16, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>×</button>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           )}
 
           {/* ── TRIP TAB ── */}
@@ -764,6 +1025,10 @@ export default function App() {
                                             {b.price && b.type !== "activity" && (
                                               <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>
                                             )}
+                                            {PASS_TYPES.includes(b.type) && (savedPasses[b.id] || canWrite) && (
+                                              <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
+                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: savedPasses[b.id] ? 1 : 0.25, lineHeight: 1 }} title={savedPasses[b.id] ? "View pass" : "Add pass"}>🎫</button>
+                                            )}
                                             {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
                                         </div>
@@ -834,6 +1099,30 @@ export default function App() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── PASS VIEWER MODAL ── */}
+          {passViewer && (
+            <div onClick={() => setPassViewer(null)}
+              style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+              <img
+                src={passViewer.dataUrl}
+                alt={passViewer.name}
+                onClick={e => e.stopPropagation()}
+                style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
+              />
+              <div style={{ position: "absolute", top: 16, right: 16 }}>
+                <button className="btn" onClick={() => setPassViewer(null)}
+                  style={{ background: "#00000015", color: "#000", border: "1px solid #00000020", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>✕</button>
+              </div>
+              <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 11, color: "#00000050", fontFamily: "'Source Code Pro', monospace" }}>{passViewer.name}</span>
+                {canWrite && (
+                  <button className="btn" onClick={e => { e.stopPropagation(); handlePassRemove(passViewer.id); }}
+                    style={{ background: "transparent", color: "#ef4444", fontSize: 11, fontFamily: "'Source Code Pro', monospace", padding: "3px 8px", border: "1px solid #ef444440", borderRadius: 4 }}>remove pass</button>
+                )}
+              </div>
             </div>
           )}
 
@@ -949,6 +1238,15 @@ export default function App() {
           {toast.msg}
         </div>
       )}
+
+      {/* Hidden file input for pass uploads */}
+      <input
+        type="file"
+        accept="image/*"
+        ref={passFileRef}
+        onChange={handlePassFile}
+        style={{ display: "none" }}
+      />
     </>
   );
 }
