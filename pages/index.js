@@ -33,6 +33,21 @@ const EMPTY_TODO = { title: "", category: "pack", assignee: "both" };
 // Booking types that can have a pass/QR attached
 const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity"];
 
+// ZXing format string → bwip-js bcid
+const FORMAT_TO_BCID = {
+  QR_CODE:     "qrcode",
+  PDF_417:     "pdf417",
+  AZTEC:       "azteccode",
+  CODE_128:    "code128",
+  CODE_39:     "code39",
+  DATA_MATRIX: "datamatrix",
+  EAN_13:      "ean13",
+  EAN_8:       "ean8",
+  UPC_A:       "upca",
+  ITF:         "interleaved2of5",
+  CODABAR:     "rationalizedCodabar",
+};
+
 function fmt(price, currency) {
   if (!price) return "—";
   return `${parseFloat(price).toFixed(2)} ${currency || "USD"}`;
@@ -200,11 +215,11 @@ export default function App() {
   const [todoFilterCat, setTodoFilterCat] = useState("all");
   const [todoFilterAssignee, setTodoFilterAssignee] = useState("all");
   // Pass viewer
-  const [passViewer, setPassViewer] = useState(null); // { id, name, dataUrl }
-  const [savedPasses, setSavedPasses] = useState({});  // { [bookingId]: true }
+  const [passViewer, setPassViewer] = useState(null); // { id, name, code, format }
   const todayRef = useRef(null);
   const passFileRef = useRef(null);
   const passUploadForRef = useRef(null);
+  const passCanvasRef = useRef(null);
 
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
@@ -217,10 +232,6 @@ export default function App() {
     try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
     setTodoFilterCat(localStorage.getItem("tfc") || "all");
     setTodoFilterAssignee(localStorage.getItem("tfa") || "all");
-    // Scan localStorage for saved passes
-    const passes = {};
-    Object.keys(localStorage).forEach(k => { if (k.startsWith("pass_")) passes[k.replace("pass_", "")] = true; });
-    setSavedPasses(passes);
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
@@ -231,6 +242,19 @@ export default function App() {
   useEffect(() => { localStorage.setItem("cg",  JSON.stringify(collapsedGroups)); }, [collapsedGroups]);
   useEffect(() => { localStorage.setItem("tfc", todoFilterCat); }, [todoFilterCat]);
   useEffect(() => { localStorage.setItem("tfa", todoFilterAssignee); }, [todoFilterAssignee]);
+  useEffect(() => {
+    if (!passViewer?.code || !passCanvasRef.current) return;
+    import("bwip-js").then(({ default: bwipjs }) => {
+      try {
+        bwipjs.toCanvas(passCanvasRef.current, {
+          bcid: FORMAT_TO_BCID[passViewer.format] || "qrcode",
+          text: passViewer.code,
+          scale: 4,
+          includetext: false,
+        });
+      } catch (err) { console.error("Barcode render error:", err); }
+    });
+  }, [passViewer]);
   useEffect(() => { fetchBookings(); }, []);
   useEffect(() => { fetchTodos(); }, []);
 
@@ -298,34 +322,58 @@ export default function App() {
   }
 
   function handlePassOpen(b) {
-    const saved = localStorage.getItem(`pass_${b.id}`);
-    if (saved) {
-      setPassViewer({ id: b.id, name: b.name, dataUrl: saved });
+    if (b.pass_code) {
+      setPassViewer({ id: b.id, name: b.name, code: b.pass_code, format: b.pass_format });
     } else {
       passUploadForRef.current = b;
       passFileRef.current?.click();
     }
   }
 
-  function handlePassFile(e) {
+  async function handlePassFile(e) {
     const file = e.target.files?.[0];
     if (!file || !passUploadForRef.current) return;
     const b = passUploadForRef.current;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const dataUrl = ev.target.result;
-      localStorage.setItem(`pass_${b.id}`, dataUrl);
-      setSavedPasses(prev => ({ ...prev, [b.id]: true }));
-      setPassViewer({ id: b.id, name: b.name, dataUrl });
-      showToast("Pass saved ✓");
-    };
-    reader.readAsDataURL(file);
-    e.target.value = "";
+    const url = URL.createObjectURL(file);
+    try {
+      const { BrowserMultiFormatReader, BarcodeFormat } = await import("@zxing/browser");
+      const reader = new BrowserMultiFormatReader();
+      const result = await reader.decodeFromImageUrl(url);
+      const pass_code = result.getText();
+      const pass_format = BarcodeFormat[result.getBarcodeFormat()];
+      const res = await fetch(`/api/bookings/${b.id}`, {
+        method: "PATCH",
+        headers: authedHeaders,
+        body: JSON.stringify({ pass_code, pass_format }),
+      });
+      if (res.status === 401) { showToast("Wrong password", false); return; }
+      setBookings(prev => {
+        const updated = prev.map(bk => bk.id === b.id ? { ...bk, pass_code, pass_format } : bk);
+        localStorage.setItem("bookings_cache", JSON.stringify(updated));
+        return updated;
+      });
+      setPassViewer({ id: b.id, name: b.name, code: pass_code, format: pass_format });
+      showToast("Pass decoded ✓");
+    } catch {
+      showToast("Could not read barcode — try a clearer screenshot", false);
+    } finally {
+      URL.revokeObjectURL(url);
+      e.target.value = "";
+    }
   }
 
-  function handlePassRemove(bookingId) {
-    localStorage.removeItem(`pass_${bookingId}`);
-    setSavedPasses(prev => { const n = { ...prev }; delete n[bookingId]; return n; });
+  async function handlePassRemove(bookingId) {
+    const res = await fetch(`/api/bookings/${bookingId}`, {
+      method: "PATCH",
+      headers: authedHeaders,
+      body: JSON.stringify({ pass_code: null, pass_format: null }),
+    });
+    if (res.status === 401) { showToast("Wrong password", false); return; }
+    setBookings(prev => {
+      const updated = prev.map(b => b.id === bookingId ? { ...b, pass_code: null, pass_format: null } : b);
+      localStorage.setItem("bookings_cache", JSON.stringify(updated));
+      return updated;
+    });
     setPassViewer(null);
     showToast("Pass removed");
   }
@@ -717,7 +765,7 @@ export default function App() {
                             )}
                             {PASS_TYPES.includes(b.type) && (
                               <button className="btn" onClick={() => handlePassOpen(b)}
-                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: savedPasses[b.id] ? 0.9 : 0.25, lineHeight: 1 }} title={savedPasses[b.id] ? "View pass" : "Add pass"}>🎫</button>
+                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: !!b.pass_code ? 0.9 : 0.25, lineHeight: 1 }} title={!!b.pass_code ? "View pass" : "Add pass"}>🎫</button>
                             )}
                             <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
                             {deleteConfirm === b.id ? (
@@ -731,7 +779,7 @@ export default function App() {
                           </div>
                         )}
                         {/* Persistent pass badge — visible even when locked */}
-                        {savedPasses[b.id] && !canWrite && PASS_TYPES.includes(b.type) && (
+                        {!!b.pass_code && !canWrite && PASS_TYPES.includes(b.type) && (
                           <button className="btn" onClick={() => handlePassOpen(b)}
                             style={{ position: "absolute", top: 12, right: 12, background: "transparent", fontSize: 14, padding: "2px 4px", border: "none", lineHeight: 1 }}>🎫</button>
                         )}
@@ -1025,9 +1073,9 @@ export default function App() {
                                             {b.price && b.type !== "activity" && (
                                               <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>
                                             )}
-                                            {PASS_TYPES.includes(b.type) && (savedPasses[b.id] || canWrite) && (
+                                            {PASS_TYPES.includes(b.type) && (!!b.pass_code || canWrite) && (
                                               <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
-                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: savedPasses[b.id] ? 1 : 0.25, lineHeight: 1 }} title={savedPasses[b.id] ? "View pass" : "Add pass"}>🎫</button>
+                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: !!b.pass_code ? 1 : 0.25, lineHeight: 1 }} title={!!b.pass_code ? "View pass" : "Add pass"}>🎫</button>
                                             )}
                                             {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
@@ -1106,11 +1154,10 @@ export default function App() {
           {passViewer && (
             <div onClick={() => setPassViewer(null)}
               style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <img
-                src={passViewer.dataUrl}
-                alt={passViewer.name}
+              <canvas
+                ref={passCanvasRef}
                 onClick={e => e.stopPropagation()}
-                style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain" }}
+                style={{ maxWidth: "92%", maxHeight: "80vh", objectFit: "contain" }}
               />
               <div style={{ position: "absolute", top: 16, right: 16 }}>
                 <button className="btn" onClick={() => setPassViewer(null)}
