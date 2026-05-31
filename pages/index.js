@@ -1075,7 +1075,7 @@ export default function App() {
                     const isPast = group.endDate < today;
                     const isActive = group.startDate <= today && today <= group.endDate;
                     const isCollapsed = collapsedGroups[group.location + gi];
-                    const hotelBooking = bookings.find(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
+                    const hotelBooking = myBookings.find(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
 
                     const vibeImg = locationImages[group.location];
 
