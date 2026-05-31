@@ -76,13 +76,13 @@ const TOOLS = [
   },
   {
     name: "add_todo",
-    description: "Add a todo item to the China trip checklist",
+    description: "Add a todo item to the China trip checklist. Use assignee='both' to create one task per person.",
     inputSchema: {
       type: "object",
       properties: {
         title:    { type: "string", description: "What needs to be done" },
         category: { type: "string", enum: ["pack", "book", "docs", "health", "tech", "do"], description: "Category — pack=packing, book=reservations, docs=documents, health=medical, tech=devices/apps, do=activities" },
-        assignee: { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for — defaults to both" },
+        assignee: { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for — 'both' creates one task per person, defaults to peter" },
         deadline: { type: "string", description: "Optional deadline in YYYY-MM-DD format" },
       },
       required: ["title"],
@@ -189,18 +189,18 @@ async function set_pass(args) {
 }
 
 async function add_todo(args) {
-  const { data, error } = await supabase
-    .from("todos")
-    .insert({
-      title:    args.title,
-      category: args.category ?? "do",
-      assignee: args.assignee ?? "both",
-      deadline: args.deadline ?? null,
-      done:     false,
-    })
-    .select().single();
+  const assignees = args.assignee === "both" ? ["peter", "friend"] : [args.assignee ?? "peter"];
+  const rows = assignees.map(assignee => ({
+    title:    args.title,
+    category: args.category ?? "do",
+    assignee,
+    deadline: args.deadline ?? null,
+    done:     false,
+  }));
+  const { data, error } = await supabase.from("todos").insert(rows).select();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
-  return { content: [{ type: "text", text: `✓ Todo added: "${data.title}" [${data.category}] for ${data.assignee}${data.deadline ? ` · due ${data.deadline}` : ""} (id: ${data.id})` }] };
+  const summary = data.map(d => `"${d.title}" → ${d.assignee}`).join(" + ");
+  return { content: [{ type: "text", text: `✓ ${data.length > 1 ? "2 todos" : "Todo"} added: ${summary} [${data[0].category}]${data[0].deadline ? ` · due ${data[0].deadline}` : ""}` }] };
 }
 
 async function list_todos(args) {
