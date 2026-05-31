@@ -315,11 +315,22 @@ export default function App() {
 
   async function handleAddTodo() {
     if (!todoForm.title.trim()) return;
+    const reset = () => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); setShowTodoForm(false); };
+    if (todoForm.assignee === "both") {
+      const [r1, r2] = await Promise.all(
+        ["peter", "friend"].map(a => fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify({ ...todoForm, assignee: a }) }))
+      );
+      if (r1.status === 401 || r2.status === 401) { showToast("Wrong password", false); return; }
+      const [t1, t2] = await Promise.all([r1.json(), r2.json()]);
+      setTodos(prev => { const u = [...prev, t1, t2]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      reset(); showToast("2 todos added — one each");
+      return;
+    }
     const res = await fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
     if (res.status === 401) { showToast("Wrong password", false); return; }
     const todo = await res.json();
     setTodos(prev => { const u = [...prev, todo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
-    setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); setShowTodoForm(false); showToast("Todo added");
+    reset(); showToast("Todo added");
   }
 
   async function handleToggleTodo(todo) {
@@ -953,7 +964,7 @@ export default function App() {
               {canWrite && (
                 <div style={{ marginBottom: 18 }}>
                   {!showTodoForm ? (
-                    <button className="btn" onClick={() => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); setShowTodoForm(true); }}
+                    <button className="btn" onClick={() => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); setShowTodoForm(true); }}
                       style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-faint)", letterSpacing: "0.05em" }}>
                       + add todo
                     </button>
@@ -975,13 +986,18 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: todoForm.assignee === "both" ? 6 : 12 }}>
                         <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>for</span>
-                        {["both", "peter", "friend"].map(v => (
+                        {["peter", "friend", "both"].map(v => (
                           <button key={v} className="btn" onClick={() => setTodoForm(f => ({ ...f, assignee: v }))}
-                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.assignee === v ? "var(--text)" : "var(--border)"}`, background: todoForm.assignee === v ? "var(--surface-hover)" : "transparent", color: todoForm.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.assignee === v ? "var(--text)" : "var(--border)"}`, background: todoForm.assignee === v ? "var(--surface-hover)" : "transparent", color: todoForm.assignee === v ? "var(--text)" : "var(--text-faint)" }}>
+                            {v === "both" ? "both ×2" : v}
+                          </button>
                         ))}
                       </div>
+                      {todoForm.assignee === "both" && (
+                        <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginBottom: 12, paddingLeft: 2 }}>creates one task per person</div>
+                      )}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                         <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>by</span>
                         <input type="date" value={todoForm.deadline || ""} onChange={e => setTodoForm(f => ({ ...f, deadline: e.target.value }))}
@@ -989,7 +1005,7 @@ export default function App() {
                         {todoForm.deadline && <button className="btn" onClick={() => setTodoForm(f => ({ ...f, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); }}
+                        <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); }}
                           style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
                         <button className="btn" onClick={handleAddTodo} disabled={!todoForm.title.trim()}
                           style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !todoForm.title.trim() ? 0.5 : 1 }}>Add</button>
@@ -1012,21 +1028,23 @@ export default function App() {
                       </button>
                     ))}
                   </div>
+                  {!identity && (
                   <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                     <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 28 }}>for</span>
-                    {["all", "both", "peter", "friend"].map(v => (
+                    {["all", "peter", "friend"].map(v => (
                       <button key={v} className="btn" onClick={() => setTodoFilterAssignee(v)}
                         style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
                     ))}
                   </div>
+                  )}
                 </div>
               )}
 
               {/* Todo list */}
               {(() => {
                 const filteredTodos = todos
-                  .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
-                  .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee || (todoFilterAssignee !== "all" && t.assignee === "both"));
+                  .filter(t => identity ? t.assignee === identity : (todoFilterAssignee === "all" || t.assignee === todoFilterAssignee))
+                  .filter(t => todoFilterCat === "all" || t.category === todoFilterCat);
 
                 // Auto-todos: computed from bookings, never stored
                 const autoTodos = (() => {
@@ -1035,14 +1053,14 @@ export default function App() {
                   locationGroups.forEach(group => {
                     if (group.endDate < today) return;
                     const hasHotel = myBookings.some(b => b.type === "hotel" && b.location === group.location);
-                    if (!hasHotel) result.push({ id: `auto-hotel-${group.location}`, title: `Book hotel · ${group.location}`, category: "book", assignee: "both", priority: 1, deadline: group.startDate });
+                    if (!hasHotel) result.push({ id: `auto-hotel-${group.location}`, title: `Book hotel · ${group.location}`, category: "book", assignee: identity || "peter", priority: 1, deadline: group.startDate });
                   });
                   // Priority 2: missing transport between consecutive future city groups
                   for (let i = 0; i < locationGroups.length - 1; i++) {
                     const from = locationGroups[i], to = locationGroups[i + 1];
                     if (to.startDate < today) continue;
                     const hasTransport = myBookings.some(b => (b.type === "flight" || b.type === "train") && b.date >= from.endDate && b.date <= to.startDate);
-                    if (!hasTransport) result.push({ id: `auto-transport-${i}`, title: `Book transport · ${from.location} → ${to.location}`, category: "book", assignee: "both", priority: 2, deadline: from.endDate });
+                    if (!hasTransport) result.push({ id: `auto-transport-${i}`, title: `Book transport · ${from.location} → ${to.location}`, category: "book", assignee: identity || "peter", priority: 2, deadline: from.endDate });
                   }
                   // Priority 3: missing QR for current identity on future bookings
                   if (identity) {
@@ -1106,7 +1124,7 @@ export default function App() {
                                   </div>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
                                     <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>for</span>
-                                    {["both", "peter", "friend"].map(v => (
+                                    {["peter", "friend"].map(v => (
                                       <button key={v} className="btn" onClick={() => setEditingTodo(t => ({ ...t, assignee: v }))}
                                         style={{ padding: "3px 9px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${editingTodo.assignee === v ? "var(--text)" : "var(--border)"}`, background: editingTodo.assignee === v ? "var(--surface-hover)" : "transparent", color: editingTodo.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
                                     ))}
