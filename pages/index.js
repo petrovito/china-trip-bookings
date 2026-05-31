@@ -31,7 +31,7 @@ const TODO_CATS = [
   { id: "tech",   label: "Tech",   icon: "📱" },
   { id: "do",     label: "Do",     icon: "🎯" },
 ];
-const EMPTY_TODO = { title: "", category: "pack", assignee: "both" };
+const EMPTY_TODO = { title: "", category: "pack", assignee: "both", deadline: "" };
 // Booking types that can have a pass/QR attached
 const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity"];
 
@@ -222,6 +222,7 @@ export default function App() {
   const [identity, setIdentity] = useState(null); // "peter" | "friend"
   const [showIdentityPicker, setShowIdentityPicker] = useState(false);
   const [pendingPassBooking, setPendingPassBooking] = useState(null);
+  const [editingTodo, setEditingTodo] = useState(null); // todo object being edited inline
   const todayRef = useRef(null);
   const passFileRef = useRef(null);
   const passUploadForRef = useRef(null);
@@ -318,7 +319,7 @@ export default function App() {
     if (res.status === 401) { showToast("Wrong password", false); return; }
     const todo = await res.json();
     setTodos(prev => { const u = [...prev, todo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
-    setTodoForm(EMPTY_TODO); setShowTodoForm(false); showToast("Todo added");
+    setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); setShowTodoForm(false); showToast("Todo added");
   }
 
   async function handleToggleTodo(todo) {
@@ -336,6 +337,16 @@ export default function App() {
     if (res.status === 401) { showToast("Wrong password", false); return; }
     setTodos(prev => { const u = prev.filter(t => t.id !== id); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
     showToast("Todo deleted");
+  }
+
+  async function handleSaveEditTodo() {
+    if (!editingTodo?.title?.trim()) return;
+    const { id, title, category, assignee, deadline } = editingTodo;
+    const res = await fetch(`/api/todos/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ title, category, assignee, deadline: deadline || null }) });
+    if (res.status === 401) { showToast("Wrong password", false); return; }
+    setTodos(prev => { const u = prev.map(t => t.id === id ? { ...t, title, category, assignee } : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setEditingTodo(null);
+    showToast("Todo updated");
   }
 
   function getBookingPasses(b) {
@@ -942,7 +953,7 @@ export default function App() {
               {canWrite && (
                 <div style={{ marginBottom: 18 }}>
                   {!showTodoForm ? (
-                    <button className="btn" onClick={() => setShowTodoForm(true)}
+                    <button className="btn" onClick={() => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); setShowTodoForm(true); }}
                       style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-faint)", letterSpacing: "0.05em" }}>
                       + add todo
                     </button>
@@ -971,8 +982,14 @@ export default function App() {
                             style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.assignee === v ? "var(--text)" : "var(--border)"}`, background: todoForm.assignee === v ? "var(--surface-hover)" : "transparent", color: todoForm.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
                         ))}
                       </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                        <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>by</span>
+                        <input type="date" value={todoForm.deadline || ""} onChange={e => setTodoForm(f => ({ ...f, deadline: e.target.value }))}
+                          style={{ ...inp, flex: 1, fontSize: 12, colorScheme: "dark" }} />
+                        {todoForm.deadline && <button className="btn" onClick={() => setTodoForm(f => ({ ...f, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
+                      </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm(EMPTY_TODO); }}
+                        <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm({ ...EMPTY_TODO, assignee: identity || "both" }); }}
                           style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
                         <button className="btn" onClick={handleAddTodo} disabled={!todoForm.title.trim()}
                           style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !todoForm.title.trim() ? 0.5 : 1 }}>Add</button>
@@ -1009,11 +1026,41 @@ export default function App() {
               {(() => {
                 const filteredTodos = todos
                   .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
-                  .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee);
-                if (todos.length === 0) return (
+                  .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee || (todoFilterAssignee !== "all" && t.assignee === "both"));
+
+                // Auto-todos: computed from bookings, never stored
+                const autoTodos = (() => {
+                  const result = [];
+                  // Priority 1: missing hotel per future location group
+                  locationGroups.forEach(group => {
+                    if (group.endDate < today) return;
+                    const hasHotel = myBookings.some(b => b.type === "hotel" && b.location === group.location);
+                    if (!hasHotel) result.push({ id: `auto-hotel-${group.location}`, title: `Book hotel · ${group.location}`, category: "book", assignee: "both", priority: 1, deadline: group.startDate });
+                  });
+                  // Priority 2: missing transport between consecutive future city groups
+                  for (let i = 0; i < locationGroups.length - 1; i++) {
+                    const from = locationGroups[i], to = locationGroups[i + 1];
+                    if (to.startDate < today) continue;
+                    const hasTransport = myBookings.some(b => (b.type === "flight" || b.type === "train") && b.date >= from.endDate && b.date <= to.startDate);
+                    if (!hasTransport) result.push({ id: `auto-transport-${i}`, title: `Book transport · ${from.location} → ${to.location}`, category: "book", assignee: "both", priority: 2, deadline: from.endDate });
+                  }
+                  // Priority 3: missing QR for current identity on future bookings
+                  if (identity) {
+                    myBookings.filter(b => PASS_TYPES.includes(b.type) && b.date >= today).forEach(b => {
+                      if (getBookingPasses(b).filter(p => p.who === identity).length === 0)
+                        result.push({ id: `auto-qr-${b.id}`, title: `Upload QR · ${b.name}`, category: "tech", assignee: identity, priority: 3 });
+                    });
+                  }
+                  return result
+                    .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
+                    .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee || t.assignee === "both")
+                    .sort((a, b) => a.priority - b.priority || (a.deadline || "z").localeCompare(b.deadline || "z"));
+                })();
+
+                if (todos.length === 0 && autoTodos.length === 0) return (
                   <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO TODOS YET</div>
                 );
-                if (filteredTodos.length === 0) return (
+                if (filteredTodos.length === 0 && autoTodos.length === 0) return (
                   <div style={{ textAlign: "center", padding: "40px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>nothing here</div>
                 );
                 const catsToShow = todoFilterCat === "all"
@@ -1024,7 +1071,12 @@ export default function App() {
                     {catsToShow.map(cat => {
                       const catTodos = filteredTodos.filter(t => t.category === cat.id);
                       if (!catTodos.length) return null;
-                      const pending = catTodos.filter(t => !t.done);
+                      const pending = catTodos.filter(t => !t.done).sort((a, b) => {
+                        if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
+                        if (a.deadline) return -1;
+                        if (b.deadline) return 1;
+                        return 0;
+                      });
                       const done = catTodos.filter(t => t.done);
                       return (
                         <div key={cat.id}>
@@ -1035,27 +1087,93 @@ export default function App() {
                           )}
                           <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
                             {[...pending, ...done].map(todo => (
-                              <div key={todo.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "10px 14px", opacity: todo.done ? 0.4 : 1, transition: "opacity 0.2s" }}>
-                                <button className="btn" onClick={() => handleToggleTodo(todo)}
-                                  style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${todo.done ? "#10b981" : "var(--border2)"}`, background: todo.done ? "#10b98120" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#10b981", padding: 0 }}>
-                                  {todo.done ? "✓" : ""}
-                                </button>
-                                <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", textDecoration: todo.done ? "line-through" : "none", lineHeight: 1.4 }}>{todo.title}</span>
-                                <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                                  {todo.assignee !== "both" && (
-                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee}</span>
-                                  )}
-                                  {canWrite && (
-                                    <button className="btn" onClick={() => handleDeleteTodo(todo.id)}
-                                      style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 16, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>×</button>
-                                  )}
+                              editingTodo?.id === todo.id ? (
+                                <div key={todo.id} style={{ background: "var(--surface2)", borderRadius: 7, padding: "12px 14px", border: "1px solid var(--border)" }}>
+                                  <input
+                                    value={editingTodo.title}
+                                    onChange={e => setEditingTodo(t => ({ ...t, title: e.target.value }))}
+                                    onKeyDown={e => { if (e.key === "Enter") handleSaveEditTodo(); if (e.key === "Escape") setEditingTodo(null); }}
+                                    autoFocus
+                                    style={{ ...inp, marginBottom: 10, fontSize: 13 }}
+                                  />
+                                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 9 }}>
+                                    {TODO_CATS.map(c => (
+                                      <button key={c.id} className="btn" onClick={() => setEditingTodo(t => ({ ...t, category: c.id }))}
+                                        style={{ padding: "4px 9px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${editingTodo.category === c.id ? "var(--text)" : "var(--border)"}`, background: editingTodo.category === c.id ? "var(--surface-hover)" : "transparent", color: editingTodo.category === c.id ? "var(--text)" : "var(--text-faint)" }}>
+                                        {c.icon} {c.label}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10 }}>
+                                    <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>for</span>
+                                    {["both", "peter", "friend"].map(v => (
+                                      <button key={v} className="btn" onClick={() => setEditingTodo(t => ({ ...t, assignee: v }))}
+                                        style={{ padding: "3px 9px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${editingTodo.assignee === v ? "var(--text)" : "var(--border)"}`, background: editingTodo.assignee === v ? "var(--surface-hover)" : "transparent", color: editingTodo.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                                    ))}
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                                    <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>by</span>
+                                    <input type="date" value={editingTodo.deadline || ""} onChange={e => setEditingTodo(t => ({ ...t, deadline: e.target.value }))}
+                                      style={{ ...inp, flex: 1, fontSize: 12, colorScheme: "dark" }} />
+                                    {editingTodo.deadline && <button className="btn" onClick={() => setEditingTodo(t => ({ ...t, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
+                                  </div>
+                                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                                    <button className="btn" onClick={() => setEditingTodo(null)}
+                                      style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", fontSize: 11 }}>Cancel</button>
+                                    <button className="btn" onClick={handleSaveEditTodo} disabled={!editingTodo.title.trim()}
+                                      style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !editingTodo.title.trim() ? 0.5 : 1, fontSize: 11 }}>Save</button>
+                                  </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <div key={todo.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "10px 14px", opacity: todo.done ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                                  <button className="btn" onClick={() => handleToggleTodo(todo)}
+                                    style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${todo.done ? "#10b981" : "var(--border2)"}`, background: todo.done ? "#10b98120" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#10b981", padding: 0 }}>
+                                    {todo.done ? "✓" : ""}
+                                  </button>
+                                  <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", textDecoration: todo.done ? "line-through" : "none", lineHeight: 1.4 }}>{todo.title}</span>
+                                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                                    {todo.deadline && !todo.done && (
+                                      <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.02em", color: todo.deadline < today ? "#ef4444" : "var(--text-tiny)", background: todo.deadline < today ? "#ef444415" : "transparent", borderRadius: 3, padding: "1px 4px" }}>
+                                        {todo.deadline < today ? "overdue" : fmtDateShort(todo.deadline)}
+                                      </span>
+                                    )}
+                                    {todo.assignee !== "both" && (
+                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee}</span>
+                                    )}
+                                    {canWrite && (
+                                      <>
+                                        <button className="btn" onClick={() => setEditingTodo({ ...todo })}
+                                          style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 13, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>✎</button>
+                                        <button className="btn" onClick={() => handleDeleteTodo(todo.id)}
+                                          style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 16, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>×</button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              )
                             ))}
                           </div>
                         </div>
                       );
                     })}
+                    {autoTodos.length > 0 && (
+                      <div style={{ marginTop: filteredTodos.length > 0 ? 4 : 0 }}>
+                        <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, paddingTop: 16, borderTop: filteredTodos.length > 0 ? "1px solid var(--border)" : "none" }}>suggested</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {autoTodos.map(t => (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "9px 14px", border: "1px dashed var(--border)", opacity: 0.65 }}>
+                              <span style={{ fontSize: 13, flexShrink: 0 }}>{TODO_CATS.find(c => c.id === t.category)?.icon}</span>
+                              <span style={{ flex: 1, fontSize: 13, color: "var(--text-faint)", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{t.title}</span>
+                              {t.deadline && (
+                                <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: t.deadline < today ? "#ef4444" : "var(--text-tiny)", background: t.deadline < today ? "#ef444415" : "transparent", borderRadius: 3, padding: "1px 4px", flexShrink: 0 }}>
+                                  {t.deadline < today ? "overdue" : fmtDateShort(t.deadline)}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -1075,7 +1193,7 @@ export default function App() {
                     const isPast = group.endDate < today;
                     const isActive = group.startDate <= today && today <= group.endDate;
                     const isCollapsed = collapsedGroups[group.location + gi];
-                    const hotelBooking = myBookings.find(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
+                    const hotelBookings = myBookings.filter(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
 
                     const vibeImg = locationImages[group.location];
 
@@ -1109,9 +1227,9 @@ export default function App() {
 
                         {!isCollapsed && (
                           <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                            {/* Hotel banner */}
-                            {hotelBooking && (
-                              <div style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                            {/* Hotel banners */}
+                            {hotelBookings.map(hotelBooking => (
+                              <div key={hotelBooking.id} style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                   <span style={{ fontSize: 13 }}>🏨</span>
                                   <span style={{ fontSize: 13, color: "var(--hotel-text)", fontFamily: "'Georgia', serif" }}>{hotelBooking.name}</span>
@@ -1137,7 +1255,7 @@ export default function App() {
                                   )}
                                 </div>
                               </div>
-                            )}
+                            ))}
 
                             {/* Days */}
                             {group.days.map(({ date: d, bookings: dayBks }) => {
