@@ -316,21 +316,38 @@ export default function App() {
   async function handleAddTodo() {
     if (!todoForm.title.trim()) return;
     const reset = () => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); setShowTodoForm(false); };
+
     if (todoForm.assignee === "both") {
+      const t = Date.now();
+      const [tmp1, tmp2] = [
+        { ...todoForm, assignee: "peter",  id: `tmp-${t}-1`, done: false },
+        { ...todoForm, assignee: "friend", id: `tmp-${t}-2`, done: false },
+      ];
+      setTodos(prev => { const u = [...prev, tmp1, tmp2]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      reset(); showToast("2 todos added — one each");
       const [r1, r2] = await Promise.all(
         ["peter", "friend"].map(a => fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify({ ...todoForm, assignee: a }) }))
       );
-      if (r1.status === 401 || r2.status === 401) { showToast("Wrong password", false); return; }
-      const [t1, t2] = await Promise.all([r1.json(), r2.json()]);
-      setTodos(prev => { const u = [...prev, t1, t2]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
-      reset(); showToast("2 todos added — one each");
+      if (r1.status === 401 || r2.status === 401) {
+        setTodos(prev => { const u = prev.filter(t => t.id !== tmp1.id && t.id !== tmp2.id); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+        showToast("Wrong password", false); return;
+      }
+      const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
+      setTodos(prev => { const u = prev.map(t => t.id === tmp1.id ? d1 : t.id === tmp2.id ? d2 : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
       return;
     }
-    const res = await fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
-    if (res.status === 401) { showToast("Wrong password", false); return; }
-    const todo = await res.json();
-    setTodos(prev => { const u = [...prev, todo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+
+    const tmpId = `tmp-${Date.now()}`;
+    const tmpTodo = { ...todoForm, id: tmpId, done: false };
+    setTodos(prev => { const u = [...prev, tmpTodo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
     reset(); showToast("Todo added");
+    const res = await fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
+    if (res.status === 401) {
+      setTodos(prev => { const u = prev.filter(t => t.id !== tmpId); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      showToast("Wrong password", false); return;
+    }
+    const todo = await res.json();
+    setTodos(prev => { const u = prev.map(t => t.id === tmpId ? todo : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
   }
 
   async function handleToggleTodo(todo) {
@@ -991,7 +1008,7 @@ export default function App() {
                         {["peter", "friend", "both"].map(v => (
                           <button key={v} className="btn" onClick={() => setTodoForm(f => ({ ...f, assignee: v }))}
                             style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.assignee === v ? "var(--text)" : "var(--border)"}`, background: todoForm.assignee === v ? "var(--surface-hover)" : "transparent", color: todoForm.assignee === v ? "var(--text)" : "var(--text-faint)" }}>
-                            {v === "both" ? "both ×2" : v}
+                            {v === "both" ? "both ×2" : v === "friend" ? FRIEND_NAME : v}
                           </button>
                         ))}
                       </div>
@@ -1033,7 +1050,9 @@ export default function App() {
                     <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 28 }}>for</span>
                     {["all", "peter", "friend"].map(v => (
                       <button key={v} className="btn" onClick={() => setTodoFilterAssignee(v)}
-                        style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                        style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>
+                        {v === "friend" ? FRIEND_NAME : v}
+                      </button>
                     ))}
                   </div>
                   )}
@@ -1126,7 +1145,9 @@ export default function App() {
                                     <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>for</span>
                                     {["peter", "friend"].map(v => (
                                       <button key={v} className="btn" onClick={() => setEditingTodo(t => ({ ...t, assignee: v }))}
-                                        style={{ padding: "3px 9px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${editingTodo.assignee === v ? "var(--text)" : "var(--border)"}`, background: editingTodo.assignee === v ? "var(--surface-hover)" : "transparent", color: editingTodo.assignee === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                                        style={{ padding: "3px 9px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${editingTodo.assignee === v ? "var(--text)" : "var(--border)"}`, background: editingTodo.assignee === v ? "var(--surface-hover)" : "transparent", color: editingTodo.assignee === v ? "var(--text)" : "var(--text-faint)" }}>
+                                        {v === "friend" ? FRIEND_NAME : v}
+                                      </button>
                                     ))}
                                   </div>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -1156,7 +1177,7 @@ export default function App() {
                                       </span>
                                     )}
                                     {todo.assignee !== "both" && (
-                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee}</span>
+                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee === "friend" ? FRIEND_NAME : todo.assignee}</span>
                                     )}
                                     {canWrite && (
                                       <>
