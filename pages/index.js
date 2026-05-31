@@ -11,11 +11,12 @@ const TYPES = [
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-29";
+const BUILD = "2026-05-31";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
+  time: "", time_end: "", origin: "",
 };
 
 // Types excluded from expense tracking
@@ -215,10 +216,15 @@ export default function App() {
   const [todoFilterCat, setTodoFilterCat] = useState("all");
   const [todoFilterAssignee, setTodoFilterAssignee] = useState("all");
   // Pass viewer
-  const [passViewer, setPassViewer] = useState(null); // { id, name, code, format }
+  const [passViewer, setPassViewer] = useState(null); // { id, name, passes: [{who,code,format}], idx }
+  // Identity: which traveler is on this device
+  const [identity, setIdentity] = useState(null); // "peter" | "friend"
+  const [showIdentityPicker, setShowIdentityPicker] = useState(false);
+  const [pendingPassBooking, setPendingPassBooking] = useState(null);
   const todayRef = useRef(null);
   const passFileRef = useRef(null);
   const passUploadForRef = useRef(null);
+  const passUploadWhoRef = useRef(null);
   const passCanvasRef = useRef(null);
 
   useEffect(() => {
@@ -232,6 +238,7 @@ export default function App() {
     try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
     setTodoFilterCat(localStorage.getItem("tfc") || "all");
     setTodoFilterAssignee(localStorage.getItem("tfa") || "all");
+    setIdentity(localStorage.getItem("who") || null);
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
@@ -242,13 +249,16 @@ export default function App() {
   useEffect(() => { localStorage.setItem("cg",  JSON.stringify(collapsedGroups)); }, [collapsedGroups]);
   useEffect(() => { localStorage.setItem("tfc", todoFilterCat); }, [todoFilterCat]);
   useEffect(() => { localStorage.setItem("tfa", todoFilterAssignee); }, [todoFilterAssignee]);
+  useEffect(() => { if (identity) localStorage.setItem("who", identity); else localStorage.removeItem("who"); }, [identity]);
   useEffect(() => {
-    if (!passViewer?.code || !passCanvasRef.current) return;
+    if (!passViewer?.passes || !passCanvasRef.current) return;
+    const p = passViewer.passes[passViewer.idx ?? 0];
+    if (!p?.code) return;
     import("bwip-js").then(({ default: bwipjs }) => {
       try {
         bwipjs.toCanvas(passCanvasRef.current, {
-          bcid: FORMAT_TO_BCID[passViewer.format] || "qrcode",
-          text: passViewer.code,
+          bcid: FORMAT_TO_BCID[p.format] || "qrcode",
+          text: p.code,
           scale: 4,
           includetext: false,
         });
@@ -321,12 +331,45 @@ export default function App() {
     showToast("Todo deleted");
   }
 
-  function handlePassOpen(b) {
-    if (b.pass_code) {
-      setPassViewer({ id: b.id, name: b.name, code: b.pass_code, format: b.pass_format });
-    } else {
+  function getBookingPasses(b) {
+    if (b.passes && b.passes.length > 0) return b.passes;
+    if (b.pass_code) return [{ who: "peter", code: b.pass_code, format: b.pass_format }];
+    return [];
+  }
+
+  function handlePassOpen(b, targetWho) {
+    const who = targetWho !== undefined ? targetWho : identity;
+    const allPasses = getBookingPasses(b);
+
+    if (!who) {
+      // Don't know who we are yet — ask first, then re-open
+      setPendingPassBooking({ b, targetWho });
+      setShowIdentityPicker(true);
+      return;
+    }
+
+    const myPasses = allPasses.filter(p => p.who === who);
+    if (myPasses.length > 0) {
+      setPassViewer({ id: b.id, name: b.name, passes: myPasses, idx: 0 });
+      return;
+    }
+
+    // No pass for this identity yet — if canWrite, trigger upload
+    if (canWrite) {
       passUploadForRef.current = b;
+      passUploadWhoRef.current = who;
       passFileRef.current?.click();
+    }
+  }
+
+  function handleIdentityPick(who) {
+    setIdentity(who);
+    localStorage.setItem("who", who);
+    setShowIdentityPicker(false);
+    if (pendingPassBooking) {
+      const { b, targetWho } = pendingPassBooking;
+      setPendingPassBooking(null);
+      setTimeout(() => handlePassOpen(b, targetWho !== undefined ? targetWho : who), 50);
     }
   }
 
@@ -334,25 +377,30 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file || !passUploadForRef.current) return;
     const b = passUploadForRef.current;
+    const who = passUploadWhoRef.current || identity || "peter";
     const url = URL.createObjectURL(file);
     try {
       const { BrowserMultiFormatReader, BarcodeFormat } = await import("@zxing/browser");
       const reader = new BrowserMultiFormatReader();
       const result = await reader.decodeFromImageUrl(url);
-      const pass_code = result.getText();
-      const pass_format = BarcodeFormat[result.getBarcodeFormat()];
+      const code = result.getText();
+      const format = BarcodeFormat[result.getBarcodeFormat()];
+      const currentBooking = bookings.find(bk => bk.id === b.id);
+      const existingPasses = currentBooking?.passes || [];
+      const newPasses = [...existingPasses, { who, code, format }];
       const res = await fetch(`/api/bookings/${b.id}`, {
         method: "PATCH",
         headers: authedHeaders,
-        body: JSON.stringify({ pass_code, pass_format }),
+        body: JSON.stringify({ passes: newPasses }),
       });
       if (res.status === 401) { showToast("Wrong password", false); return; }
       setBookings(prev => {
-        const updated = prev.map(bk => bk.id === b.id ? { ...bk, pass_code, pass_format } : bk);
+        const updated = prev.map(bk => bk.id === b.id ? { ...bk, passes: newPasses } : bk);
         localStorage.setItem("bookings_cache", JSON.stringify(updated));
         return updated;
       });
-      setPassViewer({ id: b.id, name: b.name, code: pass_code, format: pass_format });
+      const myPasses = newPasses.filter(p => p.who === who);
+      setPassViewer({ id: b.id, name: b.name, passes: myPasses, idx: myPasses.length - 1 });
       showToast("Pass decoded ✓");
     } catch {
       showToast("Could not read barcode — try a clearer screenshot", false);
@@ -362,15 +410,19 @@ export default function App() {
     }
   }
 
-  async function handlePassRemove(bookingId) {
+  async function handlePassRemove(bookingId, passEntry) {
+    const b = bookings.find(bk => bk.id === bookingId);
+    if (!b) return;
+    const allPasses = getBookingPasses(b);
+    const newPasses = allPasses.filter(p => !(p.who === passEntry.who && p.code === passEntry.code));
     const res = await fetch(`/api/bookings/${bookingId}`, {
       method: "PATCH",
       headers: authedHeaders,
-      body: JSON.stringify({ pass_code: null, pass_format: null }),
+      body: JSON.stringify({ passes: newPasses }),
     });
     if (res.status === 401) { showToast("Wrong password", false); return; }
     setBookings(prev => {
-      const updated = prev.map(b => b.id === bookingId ? { ...b, pass_code: null, pass_format: null } : b);
+      const updated = prev.map(bk => bk.id === bookingId ? { ...bk, passes: newPasses } : bk);
       localStorage.setItem("bookings_cache", JSON.stringify(updated));
       return updated;
     });
@@ -388,6 +440,9 @@ export default function App() {
       date_end: form.date_end || null,
       location: form.location || null,
       paid_by: form.paid_by || null,
+      time: form.time || null,
+      time_end: form.time_end || null,
+      origin: form.origin || null,
     };
     if (editId) {
       const r = await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
@@ -412,6 +467,7 @@ export default function App() {
       price: b.price != null ? String(b.price) : "", currency: b.currency || "USD",
       platform: b.platform || "", reference: b.reference || "", notes: b.notes || "",
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
+      time: b.time || "", time_end: b.time_end || "", origin: b.origin || "",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -515,6 +571,14 @@ export default function App() {
   }
 
   function mapsLink(b) {
+    if (b.type === "flight") {
+      const place = b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name;
+      return `https://maps.google.com/?q=${encodeURIComponent(place)}`;
+    }
+    if (b.type === "train") {
+      const place = b.origin ? `${b.origin} railway station` : b.location ? `${b.location} railway station China` : b.name;
+      return `https://maps.google.com/?q=${encodeURIComponent(place)}`;
+    }
     const query = b.location ? `${b.name}, ${b.location}, China` : `${b.name}, China`;
     return `https://maps.google.com/?q=${encodeURIComponent(query)}`;
   }
@@ -594,6 +658,10 @@ export default function App() {
                 ) : (
                   <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5 }}>🔒</button>
                 )}
+                <button className="btn" onClick={() => setShowIdentityPicker(true)} title="Who are you on this device?"
+                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 5, padding: "4px 9px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: identity ? "var(--text-muted)" : "var(--text-tiny)", letterSpacing: "0.05em" }}>
+                  {identity === "peter" ? "P" : identity === "friend" ? "F" : "?"}
+                </button>
               </div>
             </div>
 
@@ -654,6 +722,25 @@ export default function App() {
                 )}
                 <input placeholder="Location (e.g. Beijing)" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
+                {(form.type === "flight" || form.type === "train") && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <input placeholder={form.type === "flight" ? "From (e.g. Copenhagen, PEK)" : "From (e.g. Beijing, BJS)"} value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} style={inp} />
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+                    {form.type === "hotel" ? "Check-in time" : (form.type === "flight" || form.type === "train") ? "Departs" : "Starts"}
+                  </div>
+                  <input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} style={inp} />
+                </div>
+                {form.type !== "food" && (
+                  <div>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
+                      {form.type === "hotel" ? "Check-out time" : (form.type === "flight" || form.type === "train") ? "Arrives" : "Ends"}
+                    </div>
+                    <input type="time" value={form.time_end} onChange={e => setForm(f => ({ ...f, time_end: e.target.value }))} style={inp} />
+                  </div>
+                )}
                 <div style={{ gridColumn: "1 / -1" }}>
                   <input placeholder="Reference / confirmation #" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} style={inp} />
                 </div>
@@ -763,10 +850,14 @@ export default function App() {
                               <button className="btn" onClick={() => handleSettle(b.id, b.settled)}
                                 style={{ background: "transparent", color: b.settled ? "var(--text-faint)" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
                             )}
-                            {PASS_TYPES.includes(b.type) && (
-                              <button className="btn" onClick={() => handlePassOpen(b)}
-                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: !!b.pass_code ? 0.9 : 0.25, lineHeight: 1 }} title={!!b.pass_code ? "View pass" : "Add pass"}>🎫</button>
-                            )}
+                            {PASS_TYPES.includes(b.type) && (() => {
+                              const myPasses = getBookingPasses(b).filter(p => p.who === (identity || "peter"));
+                              const hasPasses = getBookingPasses(b).length > 0;
+                              return (
+                                <button className="btn" onClick={() => handlePassOpen(b)}
+                                  style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 0.9 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }} title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
+                              );
+                            })()}
                             <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
                             {deleteConfirm === b.id ? (
                               <span style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -779,7 +870,7 @@ export default function App() {
                           </div>
                         )}
                         {/* Persistent pass badge — visible even when locked */}
-                        {!!b.pass_code && !canWrite && PASS_TYPES.includes(b.type) && (
+                        {!canWrite && PASS_TYPES.includes(b.type) && identity && getBookingPasses(b).filter(p => p.who === identity).length > 0 && (
                           <button className="btn" onClick={() => handlePassOpen(b)}
                             style={{ position: "absolute", top: 12, right: 12, background: "transparent", fontSize: 14, padding: "2px 4px", border: "none", lineHeight: 1 }}>🎫</button>
                         )}
@@ -791,6 +882,8 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
                           {b.date && <Meta label="date" value={b.date_end ? `${b.date} → ${b.date_end}` : b.date} />}
+                          {(b.type === "flight" || b.type === "train") && b.origin && <Meta label="from" value={b.origin} />}
+                          {b.time && <Meta label="time" value={b.time + (b.time_end ? ` → ${b.time_end}` : "")} />}
                           {b.location && <Meta label="loc" value={b.location} />}
                           {b.price && <Meta label="price" value={fmt(b.price, b.currency)} highlight />}
                           {b.platform && <Meta label="via" value={b.platform} />}
@@ -1005,10 +1098,15 @@ export default function App() {
                                   <span style={{ fontSize: 13 }}>🏨</span>
                                   <span style={{ fontSize: 13, color: "var(--hotel-text)", fontFamily: "'Georgia', serif" }}>{hotelBooking.name}</span>
                                 </div>
-                                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                                   {hotelBooking.date_end && (
                                     <span style={{ fontSize: 10, color: "var(--hotel-text)", fontFamily: "'Source Code Pro', monospace" }}>
                                       {fmtDateShort(hotelBooking.date)} → {fmtDateShort(hotelBooking.date_end)}
+                                    </span>
+                                  )}
+                                  {(hotelBooking.time || hotelBooking.time_end) && (
+                                    <span style={{ fontSize: 10, color: "var(--hotel-text)", fontFamily: "'Source Code Pro', monospace", opacity: 0.75 }}>
+                                      {hotelBooking.time && `in ${hotelBooking.time}`}{hotelBooking.time && hotelBooking.time_end && " · "}{hotelBooking.time_end && `out ${hotelBooking.time_end}`}
                                     </span>
                                   )}
                                   <a href={mapsLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
@@ -1059,7 +1157,11 @@ export default function App() {
                                   {otherBks.map(b => {
                                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                                     const isExpanded = expandedCards[b.id];
-                                    const hasDetails = b.reference || b.platform || b.notes || b.price;
+                                    const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin;
+                                    const myPasses = getBookingPasses(b).filter(p => p.who === identity);
+                                    const hasPasses = getBookingPasses(b).length > 0;
+                                    const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
+                                    const isTransport = b.type === "flight" || b.type === "train";
                                     return (
                                       <div key={b.id} className="trip-card"
                                         onClick={() => hasDetails && toggleCard(b.id)}
@@ -1073,13 +1175,37 @@ export default function App() {
                                             {b.price && b.type !== "activity" && (
                                               <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>
                                             )}
-                                            {PASS_TYPES.includes(b.type) && (!!b.pass_code || canWrite) && (
+                                            {showPassBtn && (
                                               <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
-                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: !!b.pass_code ? 1 : 0.25, lineHeight: 1 }} title={!!b.pass_code ? "View pass" : "Add pass"}>🎫</button>
+                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }}
+                                                title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
                                             )}
                                             {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
                                         </div>
+                                        {/* Transport: origin → dest + times always visible */}
+                                        {isTransport && (b.origin || b.location || b.time) && (
+                                          <div style={{ display: "flex", gap: 10, marginTop: 4, paddingLeft: 22, flexWrap: "wrap" }}>
+                                            {(b.origin || b.location) && (
+                                              <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>
+                                                {b.origin && b.location ? `${b.origin} → ${b.location}` : b.origin || b.location}
+                                              </span>
+                                            )}
+                                            {b.time && (
+                                              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                                {b.time}{b.time_end ? ` → ${b.time_end}` : ""}
+                                              </span>
+                                            )}
+                                          </div>
+                                        )}
+                                        {/* Non-transport with time */}
+                                        {!isTransport && b.time && (
+                                          <div style={{ paddingLeft: 22, marginTop: 3 }}>
+                                            <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                              {b.time}{b.time_end ? ` – ${b.time_end}` : ""}
+                                            </span>
+                                          </div>
+                                        )}
                                         {isExpanded && (
                                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
                                             {b.date_end && <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>until {fmtDate(b.date_end)}</div>}
@@ -1096,16 +1222,28 @@ export default function App() {
                                               </div>
                                             )}
                                             {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
-                                            <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                                              {(b.type === "hotel" || b.type === "activity" || b.type === "ticket") && (
-                                                <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
-                                                  style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
-                                                  onClick={e => e.stopPropagation()}>📍 maps</a>
-                                              )}
+                                            <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                                              <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
+                                                style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
+                                                onClick={e => e.stopPropagation()}>📍 maps</a>
                                               {platformLink(b) && (
                                                 <a href={platformLink(b)} target="_blank" rel="noopener noreferrer"
                                                   style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
                                                   onClick={e => e.stopPropagation()}>↗ {b.platform}</a>
+                                              )}
+                                              {/* Pass management (canWrite): add pass per person */}
+                                              {canWrite && PASS_TYPES.includes(b.type) && (
+                                                <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                                                  {(["peter", "friend"]).filter(who => b.travelers === "both" || b.travelers === who).map(who => {
+                                                    const wPasses = getBookingPasses(b).filter(p => p.who === who);
+                                                    return (
+                                                      <button key={who} className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b, who); }}
+                                                        style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "3px 9px", borderRadius: 4, border: `1px solid ${wPasses.length > 0 ? "var(--accent)" : "var(--border)"}`, background: "transparent", color: wPasses.length > 0 ? "var(--accent)" : "var(--text-tiny)" }}>
+                                                        {wPasses.length > 0 ? `🎫 ${who[0].toUpperCase()}${wPasses.length > 1 ? ` ×${wPasses.length}` : ""}` : `+ ${who[0].toUpperCase()}`}
+                                                      </button>
+                                                    );
+                                                  })}
+                                                </div>
                                               )}
                                             </div>
                                           </div>
@@ -1150,28 +1288,70 @@ export default function App() {
             </div>
           )}
 
-          {/* ── PASS VIEWER MODAL ── */}
-          {passViewer && (
-            <div onClick={() => setPassViewer(null)}
-              style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-              <canvas
-                ref={passCanvasRef}
-                onClick={e => e.stopPropagation()}
-                style={{ maxWidth: "92%", maxHeight: "80vh", objectFit: "contain" }}
-              />
-              <div style={{ position: "absolute", top: 16, right: 16 }}>
-                <button className="btn" onClick={() => setPassViewer(null)}
-                  style={{ background: "#00000015", color: "#000", border: "1px solid #00000020", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>✕</button>
-              </div>
-              <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-                <span style={{ fontSize: 11, color: "#00000050", fontFamily: "'Source Code Pro', monospace" }}>{passViewer.name}</span>
-                {canWrite && (
-                  <button className="btn" onClick={e => { e.stopPropagation(); handlePassRemove(passViewer.id); }}
-                    style={{ background: "transparent", color: "#ef4444", fontSize: 11, fontFamily: "'Source Code Pro', monospace", padding: "3px 8px", border: "1px solid #ef444440", borderRadius: 4 }}>remove pass</button>
-                )}
+          {/* ── IDENTITY PICKER MODAL ── */}
+          {showIdentityPicker && (
+            <div onClick={() => setShowIdentityPicker(false)}
+              style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}>
+              <div onClick={e => e.stopPropagation()}
+                style={{ background: "var(--surface)", borderRadius: 14, padding: "32px 28px", maxWidth: 280, width: "90%", textAlign: "center", border: "1px solid var(--border)" }}>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 21, marginBottom: 6, color: "var(--text)" }}>Who are you?</div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 26, letterSpacing: "0.04em" }}>Saved to this device · tap to switch</div>
+                <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+                  {["peter", "friend"].map(who => (
+                    <button key={who} className="btn" onClick={() => handleIdentityPick(who)}
+                      style={{ flex: 1, padding: "13px 0", borderRadius: 9, background: identity === who ? "var(--accent)" : "var(--surface2)", color: identity === who ? "#fff" : "var(--text)", border: `1.5px solid ${identity === who ? "var(--accent)" : "var(--border)"}`, fontFamily: "'Source Code Pro', monospace", fontSize: 13, textTransform: "capitalize" }}>
+                      {who}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           )}
+
+          {/* ── PASS VIEWER MODAL ── */}
+          {passViewer && (() => {
+            const passes = passViewer.passes || [];
+            const idx = passViewer.idx ?? 0;
+            const currentPass = passes[idx];
+            const hasMultiple = passes.length > 1;
+            return (
+              <div onClick={() => setPassViewer(null)}
+                style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                <canvas
+                  ref={passCanvasRef}
+                  onClick={e => e.stopPropagation()}
+                  style={{ maxWidth: "92%", maxHeight: "70vh", objectFit: "contain" }}
+                />
+                {hasMultiple && (
+                  <div onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 18 }}>
+                    <button className="btn"
+                      onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.max(0, prev.idx - 1) }))}
+                      disabled={idx === 0}
+                      style={{ background: "#00000010", border: "1px solid #00000018", borderRadius: 7, padding: "7px 16px", fontSize: 17, color: "#000", opacity: idx === 0 ? 0.25 : 1 }}>‹</button>
+                    <span style={{ fontSize: 11, color: "#00000055", fontFamily: "'Source Code Pro', monospace" }}>{idx + 1} / {passes.length}</span>
+                    <button className="btn"
+                      onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.min(prev.passes.length - 1, prev.idx + 1) }))}
+                      disabled={idx === passes.length - 1}
+                      style={{ background: "#00000010", border: "1px solid #00000018", borderRadius: 7, padding: "7px 16px", fontSize: 17, color: "#000", opacity: idx === passes.length - 1 ? 0.25 : 1 }}>›</button>
+                  </div>
+                )}
+                <div style={{ position: "absolute", top: 16, right: 16 }}>
+                  <button className="btn" onClick={() => setPassViewer(null)}
+                    style={{ background: "#00000015", color: "#000", border: "1px solid #00000020", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>✕</button>
+                </div>
+                <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "#00000050", fontFamily: "'Source Code Pro', monospace" }}>
+                    {passViewer.name}{hasMultiple ? ` · leg ${idx + 1}` : ""}
+                    {currentPass?.who && ` · ${currentPass.who}`}
+                  </span>
+                  {canWrite && currentPass && (
+                    <button className="btn" onClick={e => { e.stopPropagation(); handlePassRemove(passViewer.id, currentPass); }}
+                      style={{ background: "transparent", color: "#ef4444", fontSize: 11, fontFamily: "'Source Code Pro', monospace", padding: "3px 8px", border: "1px solid #ef444440", borderRadius: 4 }}>remove pass</button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ── SUMMARY MODAL ── */}
           {showSummary && (
