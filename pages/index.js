@@ -12,6 +12,7 @@ const TYPES = [
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
 const BUILD = "2026-05-31";
+const FRIEND_NAME = process.env.NEXT_PUBLIC_FRIEND_NAME || "friend";
 
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
@@ -660,7 +661,7 @@ export default function App() {
                 )}
                 <button className="btn" onClick={() => setShowIdentityPicker(true)} title="Who are you on this device?"
                   style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 5, padding: "4px 9px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: identity ? "var(--text-muted)" : "var(--text-tiny)", letterSpacing: "0.05em" }}>
-                  {identity === "peter" ? "P" : identity === "friend" ? "F" : "?"}
+                  {identity === "peter" ? "P" : identity === "friend" ? (FRIEND_NAME[0] || "F").toUpperCase() : "?"}
                 </button>
               </div>
             </div>
@@ -749,10 +750,10 @@ export default function App() {
                     <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
                     {["peter", "friend", "both"].map(v => (
                       <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, travelers: v }))}
-                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.travelers === v ? "var(--text)" : "var(--border)"}`, background: form.travelers === v ? "var(--border)" : "transparent", color: form.travelers === v ? "var(--text)" : "var(--text-faint)" }}>{v}</button>
+                        style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.travelers === v ? "var(--text)" : "var(--border)"}`, background: form.travelers === v ? "var(--border)" : "transparent", color: form.travelers === v ? "var(--text)" : "var(--text-faint)" }}>{v === "friend" ? FRIEND_NAME : v}</button>
                     ))}
                     <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginLeft: 8 }}>Paid by</span>
-                    {[{ v: "peter", label: "peter" }, { v: "friend", label: "friend" }, { v: "", label: "⏳ unpaid" }].map(({ v, label }) => (
+                    {[{ v: "peter", label: "peter" }, { v: "friend", label: FRIEND_NAME }, { v: "", label: "⏳ unpaid" }].map(({ v, label }) => (
                       <button key={label} className="btn" onClick={() => setForm(f => ({ ...f, paid_by: v }))}
                         style={{ padding: "5px 12px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "var(--border)"}`, background: form.paid_by === v ? (v ? "#10b98120" : "#f59e0b20") : "transparent", color: form.paid_by === v ? (v ? "#10b981" : "#f59e0b") : "var(--text-faint)" }}>{label}</button>
                     ))}
@@ -799,8 +800,8 @@ export default function App() {
                   {showFilters && (
                     <>
                       {[
-                        { label: "for",    active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend","friend"]], colorFn: () => "var(--text)" },
-                        { label: "paid",   active: filterPaidBy,    setActive: setFilterPaidBy,    opts: [["all","all"],["peter","peter"],["friend","friend"],["pending","⏳ unpaid"]], colorFn: v => v === "pending" ? "#f59e0b" : "#10b981" },
+                        { label: "for",    active: filterTravelers, setActive: setFilterTravelers, opts: [["all","all"],["both","both"],["peter","peter"],["friend", FRIEND_NAME]], colorFn: () => "var(--text)" },
+                        { label: "paid",   active: filterPaidBy,    setActive: setFilterPaidBy,    opts: [["all","all"],["peter","peter"],["friend", FRIEND_NAME],["pending","⏳ unpaid"]], colorFn: v => v === "pending" ? "#f59e0b" : "#10b981" },
                         { label: "status", active: filterSettled,   setActive: setFilterSettled,   opts: [["all","all"],["unsettled","unsettled"],["settled","✓ settled"]], colorFn: v => v === "settled" ? "#10b981" : "var(--text)" },
                       ].map(({ label, active, setActive, opts, colorFn }) => (
                         <div key={label} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
@@ -888,8 +889,8 @@ export default function App() {
                           {b.price && <Meta label="price" value={fmt(b.price, b.currency)} highlight />}
                           {b.platform && <Meta label="via" value={b.platform} />}
                           {b.reference && <Meta label="ref" value={b.reference} mono />}
-                          {b.type !== "activity" && <Meta label="travelers" value={b.travelers || "both"} />}
-                          {b.type !== "activity" && (b.paid_by ? <Meta label="paid by" value={b.paid_by} /> : <Meta label="paid by" value="—" />)}
+                          {b.type !== "activity" && <Meta label="travelers" value={b.travelers === "friend" ? FRIEND_NAME : b.travelers || "both"} />}
+                          {b.type !== "activity" && (b.paid_by ? <Meta label="paid by" value={b.paid_by === "friend" ? FRIEND_NAME : b.paid_by} /> : <Meta label="paid by" value="—" />)}
                         </div>
                         {b.notes && <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
                       </div>
@@ -1236,10 +1237,11 @@ export default function App() {
                                                 <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                                                   {(["peter", "friend"]).filter(who => b.travelers === "both" || b.travelers === who).map(who => {
                                                     const wPasses = getBookingPasses(b).filter(p => p.who === who);
+                                                    const initial = (who === "friend" ? FRIEND_NAME : who)[0]?.toUpperCase();
                                                     return (
                                                       <button key={who} className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b, who); }}
                                                         style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "3px 9px", borderRadius: 4, border: `1px solid ${wPasses.length > 0 ? "var(--accent)" : "var(--border)"}`, background: "transparent", color: wPasses.length > 0 ? "var(--accent)" : "var(--text-tiny)" }}>
-                                                        {wPasses.length > 0 ? `🎫 ${who[0].toUpperCase()}${wPasses.length > 1 ? ` ×${wPasses.length}` : ""}` : `+ ${who[0].toUpperCase()}`}
+                                                        {wPasses.length > 0 ? `🎫 ${initial}${wPasses.length > 1 ? ` ×${wPasses.length}` : ""}` : `+ ${initial}`}
                                                       </button>
                                                     );
                                                   })}
@@ -1300,7 +1302,7 @@ export default function App() {
                   {["peter", "friend"].map(who => (
                     <button key={who} className="btn" onClick={() => handleIdentityPick(who)}
                       style={{ flex: 1, padding: "13px 0", borderRadius: 9, background: identity === who ? "var(--accent)" : "var(--surface2)", color: identity === who ? "#fff" : "var(--text)", border: `1.5px solid ${identity === who ? "var(--accent)" : "var(--border)"}`, fontFamily: "'Source Code Pro', monospace", fontSize: 13, textTransform: "capitalize" }}>
-                      {who}
+                      {who === "friend" ? FRIEND_NAME : who}
                     </button>
                   ))}
                 </div>
@@ -1342,7 +1344,7 @@ export default function App() {
                 <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 11, color: "#00000050", fontFamily: "'Source Code Pro', monospace" }}>
                     {passViewer.name}{hasMultiple ? ` · leg ${idx + 1}` : ""}
-                    {currentPass?.who && ` · ${currentPass.who}`}
+                    {currentPass?.who && ` · ${currentPass.who === "friend" ? FRIEND_NAME : currentPass.who}`}
                   </span>
                   {canWrite && currentPass && (
                     <button className="btn" onClick={e => { e.stopPropagation(); handlePassRemove(passViewer.id, currentPass); }}
