@@ -227,6 +227,7 @@ export default function App() {
   const passUploadForRef = useRef(null);
   const passUploadWhoRef = useRef(null);
   const passCanvasRef = useRef(null);
+  const pickerAutoShownRef = useRef(false);
 
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
@@ -239,7 +240,12 @@ export default function App() {
     try { const cg = localStorage.getItem("cg"); if (cg) setCollapsedGroups(JSON.parse(cg)); } catch {}
     setTodoFilterCat(localStorage.getItem("tfc") || "all");
     setTodoFilterAssignee(localStorage.getItem("tfa") || "all");
-    setIdentity(localStorage.getItem("who") || null);
+    const savedIdentity = localStorage.getItem("who") || null;
+    setIdentity(savedIdentity);
+    if (!savedIdentity && !pickerAutoShownRef.current) {
+      pickerAutoShownRef.current = true;
+      setTimeout(() => setShowIdentityPicker(true), 350);
+    }
   }, []);
   useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
   useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
@@ -372,6 +378,12 @@ export default function App() {
       setPendingPassBooking(null);
       setTimeout(() => handlePassOpen(b, targetWho !== undefined ? targetWho : who), 50);
     }
+  }
+
+  function handleIdentityReset() {
+    setIdentity(null);
+    localStorage.removeItem("who");
+    setShowIdentityPicker(false);
   }
 
   async function handlePassFile(e) {
@@ -525,7 +537,12 @@ export default function App() {
     });
   }, [activeTab, bookings]);
 
-  const filtered = bookings
+  // Personalized view: only bookings that pertain to the current user
+  const myBookings = identity
+    ? bookings.filter(b => b.travelers === "both" || b.travelers === identity)
+    : bookings;
+
+  const filtered = myBookings
     .filter(b => filterTypes.length === 0 || filterTypes.includes(b.type))
     .filter(b => filterSettled === "all" || (filterSettled === "settled" ? b.settled : !b.settled))
     .filter(b => filterTravelers === "all" || b.travelers === filterTravelers)
@@ -551,7 +568,7 @@ export default function App() {
 
   // Trip tab helpers
   const today = toDateStr(new Date());
-  const locationGroups = buildLocationGroups(bookings);
+  const locationGroups = buildLocationGroups(myBookings);
 
   function toggleCard(id) {
     setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1297,7 +1314,9 @@ export default function App() {
               <div onClick={e => e.stopPropagation()}
                 style={{ background: "var(--surface)", borderRadius: 14, padding: "32px 28px", maxWidth: 280, width: "90%", textAlign: "center", border: "1px solid var(--border)" }}>
                 <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 21, marginBottom: 6, color: "var(--text)" }}>Who are you?</div>
-                <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 26, letterSpacing: "0.04em" }}>Saved to this device · tap to switch</div>
+                <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 26, letterSpacing: "0.04em" }}>
+                  {identity ? "Tap to switch · saved to this device" : "Personalises your view · saved to this device"}
+                </div>
                 <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
                   {["peter", "friend"].map(who => (
                     <button key={who} className="btn" onClick={() => handleIdentityPick(who)}
@@ -1306,6 +1325,12 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                {identity && (
+                  <button className="btn" onClick={handleIdentityReset}
+                    style={{ marginTop: 20, background: "transparent", border: "none", fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" }}>
+                    clear identity
+                  </button>
+                )}
               </div>
             </div>
           )}
@@ -1394,11 +1419,18 @@ export default function App() {
                               const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                               const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
                               const dkk = toDKK(pOwes, currency);
+                              // Personalize label: pOwes > 0 means Peter owes friend
+                              const debtLabel = pOwes > 0
+                                ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
+                                : (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`);
+                              const debtColor = pOwes > 0
+                                ? (identity === "peter" ? "#f97316" : "#10b981")
+                                : (identity === "peter" ? "#10b981" : "#f97316");
                               return (
                                 <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
                                   <div style={{ fontSize: 14, color: "var(--text)" }}>
-                                    {pOwes > 0 ? "Peter owes friend" : "Friend owes Peter"}
-                                    <span style={{ color: pOwes > 0 ? "#f97316" : "#10b981", fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
+                                    {debtLabel}
+                                    <span style={{ color: debtColor, fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
                                   </div>
                                   {dkk !== null && <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
                                 </div>
