@@ -609,6 +609,27 @@ export default function App() {
   const today = toDateStr(new Date());
   const locationGroups = buildLocationGroups(myBookings);
 
+  // Flat timeline: transit connectors interleaved with location groups.
+  // Each flight/train appears just before the city it arrives at.
+  const tripTransits = myBookings
+    .filter(b => b.type === "flight" || b.type === "train")
+    .sort((a, b_) => (a.date || "").localeCompare(b_.date || ""));
+  const tripTimeline = (() => {
+    const result = [];
+    let ti = 0;
+    locationGroups.forEach((group, gi) => {
+      const nextStart = locationGroups[gi + 1]?.startDate ?? "9999-99-99";
+      while (ti < tripTransits.length && tripTransits[ti].date < nextStart) {
+        result.push({ kind: "transit", b: tripTransits[ti++] });
+      }
+      result.push({ kind: "group", group, gi });
+    });
+    while (ti < tripTransits.length) {
+      result.push({ kind: "transit", b: tripTransits[ti++] });
+    }
+    return result;
+  })();
+
   function toggleCard(id) {
     setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
   }
@@ -1228,7 +1249,78 @@ export default function App() {
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO BOOKINGS YET</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {locationGroups.map((group, gi) => {
+                  {tripTimeline.map((item, timelineIdx) => {
+                    if (item.kind === "transit") {
+                      const b = item.b;
+                      const t = TYPES.find(tt => tt.id === b.type) || TYPES[0];
+                      const isPastTransit = (b.date || "") < today;
+                      const isExpanded = expandedCards[b.id];
+                      const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin;
+                      const myPasses = getBookingPasses(b).filter(p => p.who === identity);
+                      const hasPasses = getBookingPasses(b).length > 0;
+                      const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
+                      return (
+                        <div key={`transit-${b.id}`} style={{ marginBottom: 20, opacity: isPastTransit ? 0.45 : 1 }}>
+                          {/* Date rule */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "var(--text-tiny)", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{fmtDate(b.date)}</span>
+                            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+                          </div>
+                          {/* Transit card */}
+                          <div className="trip-card" onClick={() => hasDetails && toggleCard(b.id)}
+                            style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: 14 }}>{t.icon}</span>
+                                <span style={{ fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.3 }}>{b.name}</span>
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>}
+                                {showPassBtn && (
+                                  <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
+                                    style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }} title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
+                                )}
+                                {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
+                              </div>
+                            </div>
+                            {(b.origin || b.location || b.time) && (
+                              <div style={{ display: "flex", gap: 10, marginTop: 4, paddingLeft: 22, flexWrap: "wrap" }}>
+                                {(b.origin || b.location) && <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{b.origin && b.location ? `${b.origin} → ${b.location}` : b.origin || b.location}</span>}
+                                {b.time && <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span>}
+                              </div>
+                            )}
+                            {isExpanded && (
+                              <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+                                {b.reference && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
+                                {b.platform && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
+                                {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                                <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                                  <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>📍 maps</a>
+                                  {platformLink(b) && <a href={platformLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>↗ {b.platform}</a>}
+                                  {canWrite && PASS_TYPES.includes(b.type) && (
+                                    <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                                      {(["peter", "friend"]).filter(who => b.travelers === "both" || b.travelers === who).map(who => {
+                                        const wPasses = getBookingPasses(b).filter(p => p.who === who);
+                                        const initial = (who === "friend" ? FRIEND_NAME : who)[0]?.toUpperCase();
+                                        return (
+                                          <button key={who} className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b, who); }}
+                                            style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "3px 9px", borderRadius: 4, border: `1px solid ${wPasses.length > 0 ? "var(--accent)" : "var(--border)"}`, background: "transparent", color: wPasses.length > 0 ? "var(--accent)" : "var(--text-tiny)" }}>
+                                            {wPasses.length > 0 ? `🎫 ${initial}${wPasses.length > 1 ? ` ×${wPasses.length}` : ""}` : `+ ${initial}`}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                          {/* Arrow into next location */}
+                          <div style={{ textAlign: "center", marginTop: 10, color: "var(--border)", fontSize: 10, lineHeight: 1 }}>▼</div>
+                        </div>
+                      );
+                    }
+                    const { group, gi } = item;
                     const isPast = group.endDate < today;
                     const isActive = group.startDate <= today && today <= group.endDate;
                     const isCollapsed = collapsedGroups[group.location + gi];
@@ -1299,7 +1391,7 @@ export default function App() {
                             {/* Days */}
                             {group.days.map(({ date: d, bookings: dayBks }) => {
                               const isToday = d === today;
-                              const nonHotel = dayBks.filter(b => b.type !== "hotel");
+                              const nonHotel = dayBks.filter(b => b.type !== "hotel" && b.type !== "flight" && b.type !== "train");
                               const foodBks = nonHotel.filter(b => b.type === "food");
                               const otherBks = nonHotel.filter(b => b.type !== "food");
                               const isFoodExpanded = expandedFoodDays[d];
