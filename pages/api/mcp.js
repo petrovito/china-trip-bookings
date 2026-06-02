@@ -6,6 +6,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
+const TRANSIT_TYPES = ["flight", "train"];
+
+async function getOrCreateSegment(type, location) {
+  if (!location?.trim() || TRANSIT_TYPES.includes(type)) return null;
+  const loc = location.trim();
+  const { data: existing } = await supabase.from("segments").select("id").eq("location", loc).single();
+  if (existing) return existing.id;
+  const { count } = await supabase.from("segments").select("*", { count: "exact", head: true });
+  const { data: created, error } = await supabase
+    .from("segments")
+    .insert({ location: loc, sort_order: (count ?? 0) + 1 })
+    .select("id").single();
+  if (error) { console.error("getOrCreateSegment:", error.message); return null; }
+  return created.id;
+}
+
 const TOOLS = [
   {
     name: "add_booking",
@@ -123,6 +139,7 @@ const TOOLS = [
 ];
 
 async function add_booking(args) {
+  const segment_id = await getOrCreateSegment(args.type, args.location);
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -138,6 +155,7 @@ async function add_booking(args) {
       notes: args.notes ?? null,
       travelers: args.travelers ?? "both",
       paid_by: args.paid_by ?? null,
+      segment_id,
     })
     .select().single();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
