@@ -78,14 +78,14 @@ function bookingDays(b) {
   let cur = new Date(b.date + "T00:00:00");
   const end = new Date(b.date_end + "T00:00:00");
   while (cur <= end) {
-    days.push(cur.toISOString().slice(0, 10));
+    days.push(toDateStr(cur));
     cur.setDate(cur.getDate() + 1);
   }
   return days;
 }
 
 function toDateStr(d) {
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 function fmtDate(dateStr) {
