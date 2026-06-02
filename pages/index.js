@@ -615,20 +615,26 @@ export default function App() {
     .filter(b => b.type === "flight" || b.type === "train")
     .sort((a, b_) => (a.date || "").localeCompare(b_.date || ""));
   const tripTimeline = (() => {
-    // A transit "arrives at" a group if its date falls on or within 1 day after the group's start.
-    // Anything later is a departure that belongs after the group (or after all groups).
-    const addDay = d => { const dt = new Date(d + "T00:00:00Z"); dt.setUTCDate(dt.getUTCDate() + 1); return dt.toISOString().slice(0, 10); };
+    // Assign each transit to the group whose startDate is closest within ±1 day.
+    // This prevents consecutive groups (e.g. Jun 20 / Jun 21) from both claiming the same transit.
+    const diffDays = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 86400000);
+    const groupFor = tripTransits.map(t => {
+      let bestGi = -1, bestDist = Infinity;
+      locationGroups.forEach((group, gi) => {
+        const diff = diffDays(t.date, group.startDate); // positive = group starts after transit
+        if (diff >= -1 && diff <= 1) {
+          const dist = Math.abs(diff);
+          if (dist < bestDist || (dist === bestDist && gi < bestGi)) { bestDist = dist; bestGi = gi; }
+        }
+      });
+      return bestGi; // -1 = after all groups
+    });
     const result = [];
-    let ti = 0;
     locationGroups.forEach((group, gi) => {
-      while (ti < tripTransits.length && tripTransits[ti].date <= addDay(group.startDate)) {
-        result.push({ kind: "transit", b: tripTransits[ti++] });
-      }
+      tripTransits.forEach((t, ti) => { if (groupFor[ti] === gi) result.push({ kind: "transit", b: t }); });
       result.push({ kind: "group", group, gi });
     });
-    while (ti < tripTransits.length) {
-      result.push({ kind: "transit", b: tripTransits[ti++] });
-    }
+    tripTransits.forEach((t, ti) => { if (groupFor[ti] === -1) result.push({ kind: "transit", b: t }); });
     return result;
   })();
 
