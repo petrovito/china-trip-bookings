@@ -1263,11 +1263,6 @@ export default function App() {
                       const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
                       return (
                         <div key={`transit-${b.id}`} style={{ marginBottom: 20, opacity: isPastTransit ? 0.45 : 1 }}>
-                          {/* Date rule */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                            <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "var(--text-tiny)", letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{fmtDate(b.date)}</span>
-                            <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
-                          </div>
                           {/* Transit card */}
                           <div className="trip-card" onClick={() => hasDetails && toggleCard(b.id)}
                             style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
