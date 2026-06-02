@@ -615,11 +615,13 @@ export default function App() {
     .filter(b => b.type === "flight" || b.type === "train")
     .sort((a, b_) => (a.date || "").localeCompare(b_.date || ""));
   const tripTimeline = (() => {
+    // A transit "arrives at" a group if its date falls on or within 1 day after the group's start.
+    // Anything later is a departure that belongs after the group (or after all groups).
+    const addDay = d => { const dt = new Date(d + "T00:00:00Z"); dt.setUTCDate(dt.getUTCDate() + 1); return dt.toISOString().slice(0, 10); };
     const result = [];
     let ti = 0;
     locationGroups.forEach((group, gi) => {
-      const nextStart = locationGroups[gi + 1]?.startDate ?? "9999-99-99";
-      while (ti < tripTransits.length && tripTransits[ti].date < nextStart) {
+      while (ti < tripTransits.length && tripTransits[ti].date <= addDay(group.startDate)) {
         result.push({ kind: "transit", b: tripTransits[ti++] });
       }
       result.push({ kind: "group", group, gi });
@@ -1275,7 +1277,7 @@ export default function App() {
                                 <span style={{ fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.3 }}>{b.name}</span>
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>}
+                                <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", whiteSpace: "nowrap" }}>{fmtDateShort(b.date)}</span>
                                 {showPassBtn && (
                                   <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
                                     style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }} title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
@@ -1283,14 +1285,10 @@ export default function App() {
                                 {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                               </div>
                             </div>
-                            {(b.origin || b.location || b.time) && (
-                              <div style={{ display: "flex", gap: 10, marginTop: 4, paddingLeft: 22, flexWrap: "wrap" }}>
-                                {(b.origin || b.location) && <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{b.origin && b.location ? `${b.origin} → ${b.location}` : b.origin || b.location}</span>}
-                                {b.time && <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span>}
-                              </div>
-                            )}
                             {isExpanded && (
                               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
+                                {b.time && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>dep</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span></div>}
+                                {b.price && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>cost</span><span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span></div>}
                                 {b.reference && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
                                 {b.platform && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
                                 {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
@@ -1321,8 +1319,11 @@ export default function App() {
                       );
                     }
                     const { group, gi } = item;
+                    // Show the departure transit's date as the location end date (more natural than checkout-minus-one)
+                    const nextItem = tripTimeline[timelineIdx + 1];
+                    const displayEndDate = nextItem?.kind === "transit" ? nextItem.b.date : group.endDate;
                     const isPast = group.endDate < today;
-                    const isActive = group.startDate <= today && today <= group.endDate;
+                    const isActive = group.startDate <= today && today <= displayEndDate;
                     const isCollapsed = collapsedGroups[group.location + gi];
                     const hotelBookings = myBookings.filter(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
 
@@ -1347,7 +1348,7 @@ export default function App() {
                                   {group.location}
                                 </div>
                                 <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
-                                  {fmtDateShort(group.startDate)}{group.startDate !== group.endDate ? ` – ${fmtDateShort(group.endDate)}` : ""}
+                                  {fmtDateShort(group.startDate)}{group.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
                                   {isActive && " · now"}
                                 </div>
                               </div>
