@@ -31,7 +31,7 @@ const TODO_CATS = [
   { id: "tech",   label: "Tech",   icon: "📱" },
   { id: "do",     label: "Do",     icon: "🎯" },
 ];
-const EMPTY_TODO = { title: "", category: "pack", assignee: "both", deadline: "" };
+const EMPTY_TODO = { title: "", category: "pack", assignee: "both", deadline: "", segment_id: null };
 // Booking types that can have a pass/QR attached
 const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity"];
 
@@ -61,13 +61,6 @@ function peterShare(b) {
   if (b.travelers === "peter") return p;
   if (b.travelers === "friend") return 0;
   return p / 2;
-}
-
-// Does a booking span a given date?
-function bookingCoversDate(b, dateStr) {
-  if (!b.date) return false;
-  if (!b.date_end) return b.date === dateStr;
-  return b.date <= dateStr && dateStr <= b.date_end;
 }
 
 // All days a booking spans
@@ -100,90 +93,6 @@ function fmtDateShort(dateStr) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-// Build location groups from bookings for Trip tab
-function buildLocationGroups(bookings) {
-  // Collect all dates that appear across all bookings
-  const allDates = new Set();
-  bookings.forEach(b => {
-    bookingDays(b).forEach(d => allDates.add(d));
-    if (b.date) allDates.add(b.date);
-  });
-
-  // Sort bookings by date
-  const sorted = [...bookings].filter(b => b.date).sort((a, b) => a.date.localeCompare(b.date));
-  if (sorted.length === 0) return [];
-
-  // Build date range for trip
-  const tripStart = sorted[0].date;
-  const tripEnd = sorted.reduce((max, b) => {
-    const end = b.date_end || b.date;
-    return end > max ? end : max;
-  }, sorted[sorted.length - 1].date);
-
-  // Generate all days
-  const days = [];
-  let cur = new Date(tripStart + "T00:00:00");
-  const end = new Date(tripEnd + "T00:00:00");
-  while (cur <= end) {
-    days.push(toDateStr(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-
-  // Assign location to each day (from hotel bookings primarily)
-  const dayLocation = {};
-  // First pass: hotel date spans set the location
-  sorted.filter(b => b.type === "hotel" && b.location).forEach(b => {
-    bookingDays(b).forEach(d => { if (!dayLocation[d]) dayLocation[d] = b.location; });
-  });
-  // Second pass: any booking with location fills gaps
-  sorted.filter(b => b.location).forEach(b => {
-    bookingDays(b).forEach(d => { if (!dayLocation[d]) dayLocation[d] = b.location; });
-    if (b.date && !dayLocation[b.date]) dayLocation[b.date] = b.location;
-  });
-  // Third pass: fill remaining days by proximity (carry forward)
-  let lastLoc = null;
-  days.forEach(d => {
-    if (dayLocation[d]) { lastLoc = dayLocation[d]; }
-    else if (lastLoc) { dayLocation[d] = lastLoc; }
-  });
-
-  // Group consecutive days by location
-  const groups = [];
-  let curGroup = null;
-  days.forEach(d => {
-    const loc = dayLocation[d] || "Unknown";
-    if (!curGroup || curGroup.location !== loc) {
-      curGroup = { location: loc, startDate: d, endDate: d, days: [] };
-      groups.push(curGroup);
-    }
-    curGroup.endDate = d;
-    curGroup.days.push(d);
-  });
-
-  // Attach bookings to each day
-  groups.forEach(g => {
-    g.days = g.days.map(d => ({
-      date: d,
-      bookings: sorted.filter(b => {
-        // Hotels: show only on first day of span within this group
-        if ((b.type === "hotel" || b.type === "activity") && b.date_end) {
-          return b.date === d && g.days.includes(d);
-        }
-        return b.date === d;
-      }),
-      spanners: sorted.filter(b => {
-        // Hotels/activities that span multiple days: show as banner on first day only
-        if ((b.type === "hotel") && b.date_end && b.date_end > b.date) {
-          return b.date === d;
-        }
-        return false;
-      }),
-    }));
-  });
-
-  return groups;
-}
-
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -207,6 +116,7 @@ export default function App() {
   const [ratesLoading, setRatesLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState({});
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [segments, setSegments] = useState([]);
   const [locationImages, setLocationImages] = useState({});
   const [showSummary, setShowSummary] = useState(false);
   const [expandedFoodDays, setExpandedFoodDays] = useState({});
@@ -275,6 +185,7 @@ export default function App() {
   }, [passViewer]);
   useEffect(() => { fetchBookings(); }, []);
   useEffect(() => { fetchTodos(); }, []);
+  useEffect(() => { fetchSegments(); }, []);
 
   // Scroll to today when switching to trip tab
   useEffect(() => {
@@ -310,6 +221,16 @@ export default function App() {
     } catch {
       const cached = localStorage.getItem("todos_cache");
       if (cached) try { setTodos(JSON.parse(cached)); } catch {}
+    }
+  }
+
+  async function fetchSegments() {
+    try {
+      const res = await fetch("/api/segments");
+      const data = await res.json();
+      setSegments(Array.isArray(data) ? data : []);
+    } catch {
+      // non-fatal — trip tab degrades gracefully
     }
   }
 
@@ -607,36 +528,65 @@ export default function App() {
 
   // Trip tab helpers
   const today = toDateStr(new Date());
-  const locationGroups = buildLocationGroups(myBookings);
 
-  // Flat timeline: transit connectors interleaved with location groups.
-  // Each flight/train appears just before the city it arrives at.
-  const tripTransits = myBookings
-    .filter(b => b.type === "flight" || b.type === "train")
-    .sort((a, b_) => (a.date || "").localeCompare(b_.date || ""));
-  const tripTimeline = (() => {
-    // Assign each transit to the group whose startDate is closest within ±1 day.
-    // This prevents consecutive groups (e.g. Jun 20 / Jun 21) from both claiming the same transit.
-    const diffDays = (a, b) => Math.round((new Date(b + "T00:00:00Z") - new Date(a + "T00:00:00Z")) / 86400000);
-    const groupFor = tripTransits.map(t => {
-      let bestGi = -1, bestDist = Infinity;
-      locationGroups.forEach((group, gi) => {
-        const diff = diffDays(t.date, group.startDate); // positive = group starts after transit
-        if (diff >= -1 && diff <= 1) {
-          const dist = Math.abs(diff);
-          if (dist < bestDist || (dist === bestDist && gi < bestGi)) { bestDist = dist; bestGi = gi; }
-        }
-      });
-      return bestGi; // -1 = after all groups
+  // Computed segment date ranges (dates float off bookings, never stored)
+  const segmentData = useMemo(() => {
+    return segments.map(seg => {
+      const segBookings = myBookings.filter(b => b.segment_id === seg.id && b.date);
+      if (!segBookings.length) return { ...seg, startDate: null, endDate: null, days: [] };
+
+      const startDate = segBookings.reduce(
+        (min, b) => (!min || b.date < min ? b.date : min), null
+      );
+      const endDate = segBookings.reduce((max, b) => {
+        const e = b.date_end || b.date;
+        return !max || e > max ? e : max;
+      }, null);
+
+      const days = [];
+      let cur = new Date(startDate + "T00:00:00");
+      const end = new Date(endDate + "T00:00:00");
+      while (cur <= end) {
+        const d = toDateStr(cur);
+        days.push({
+          date: d,
+          bookings: segBookings.filter(b =>
+            b.date === d &&
+            b.type !== "hotel" &&
+            b.type !== "flight" &&
+            b.type !== "train"
+          ),
+        });
+        cur.setDate(cur.getDate() + 1);
+      }
+
+      return { ...seg, startDate, endDate, days };
     });
+  }, [segments, myBookings]);
+
+  // Flat timeline: transits string-matched to their destination segment, appearing before it
+  const tripTimeline = useMemo(() => {
+    const transits = myBookings
+      .filter(b => b.type === "flight" || b.type === "train")
+      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+
+    const placed = new Set();
     const result = [];
-    locationGroups.forEach((group, gi) => {
-      tripTransits.forEach((t, ti) => { if (groupFor[ti] === gi) result.push({ kind: "transit", b: t }); });
-      result.push({ kind: "group", group, gi });
+
+    segmentData.forEach(seg => {
+      transits
+        .filter(t => t.location === seg.location)
+        .forEach(t => { result.push({ kind: "transit", b: t }); placed.add(t.id); });
+      result.push({ kind: "segment", segment: seg });
     });
-    tripTransits.forEach((t, ti) => { if (groupFor[ti] === -1) result.push({ kind: "transit", b: t }); });
+
+    // Unmatched transits fall to the end
+    transits
+      .filter(t => !placed.has(t.id))
+      .forEach(t => result.push({ kind: "transit", b: t }));
+
     return result;
-  })();
+  }, [segmentData, myBookings]);
 
   function toggleCard(id) {
     setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
@@ -1026,7 +976,7 @@ export default function App() {
                       />
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                         {TODO_CATS.map(c => (
-                          <button key={c.id} className="btn" onClick={() => setTodoForm(f => ({ ...f, category: c.id }))}
+                          <button key={c.id} className="btn" onClick={() => setTodoForm(f => ({ ...f, category: c.id, segment_id: (c.id === "do" || c.id === "book") ? f.segment_id : null }))}
                             style={{ padding: "5px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${todoForm.category === c.id ? "var(--text)" : "var(--border)"}`, background: todoForm.category === c.id ? "var(--surface-hover)" : "transparent", color: todoForm.category === c.id ? "var(--text)" : "var(--text-faint)" }}>
                             {c.icon} {c.label}
                           </button>
@@ -1050,6 +1000,18 @@ export default function App() {
                           style={{ ...inp, flex: 1, fontSize: 12, colorScheme: "dark" }} />
                         {todoForm.deadline && <button className="btn" onClick={() => setTodoForm(f => ({ ...f, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
                       </div>
+                      {(todoForm.category === "do" || todoForm.category === "book") && segments.length > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                          <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>in</span>
+                          <select value={todoForm.segment_id || ""} onChange={e => setTodoForm(f => ({ ...f, segment_id: e.target.value || null }))}
+                            style={{ ...inp, flex: 1, fontSize: 12 }}>
+                            <option value="">anywhere</option>
+                            {segments.map(s => (
+                              <option key={s.id} value={s.id}>{s.location}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         <button className="btn" onClick={() => { setShowTodoForm(false); setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); }}
                           style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
@@ -1097,17 +1059,17 @@ export default function App() {
                 // Auto-todos: computed from bookings, never stored
                 const autoTodos = (() => {
                   const result = [];
-                  // Priority 1: missing hotel per future location group
-                  locationGroups.forEach(group => {
-                    if (group.endDate < today) return;
-                    const hasHotel = myBookings.some(b => b.type === "hotel" && b.location === group.location);
-                    if (!hasHotel) result.push({ id: `auto-hotel-${group.location}`, title: `Book hotel · ${group.location}`, category: "book", assignee: identity || "peter", priority: 1, deadline: group.startDate });
+                  // Priority 1: missing hotel per future segment
+                  segmentData.forEach(seg => {
+                    if (!seg.endDate || seg.endDate < today) return;
+                    const hasHotel = myBookings.some(b => b.type === "hotel" && b.segment_id === seg.id);
+                    if (!hasHotel) result.push({ id: `auto-hotel-${seg.id}`, title: `Book hotel · ${seg.location}`, category: "book", assignee: identity || "peter", priority: 1, deadline: seg.startDate });
                   });
-                  // Priority 2: missing transport between consecutive future city groups
-                  for (let i = 0; i < locationGroups.length - 1; i++) {
-                    const from = locationGroups[i], to = locationGroups[i + 1];
-                    if (to.startDate < today) continue;
-                    const hasTransport = myBookings.some(b => (b.type === "flight" || b.type === "train") && b.date >= from.endDate && b.date <= to.startDate);
+                  // Priority 2: missing transport between consecutive future segments
+                  for (let i = 0; i < segmentData.length - 1; i++) {
+                    const from = segmentData[i], to = segmentData[i + 1];
+                    if (!to.startDate || to.startDate < today) continue;
+                    const hasTransport = myBookings.some(b => (b.type === "flight" || b.type === "train") && b.location === to.location);
                     if (!hasTransport) result.push({ id: `auto-transport-${i}`, title: `Book transport · ${from.location} → ${to.location}`, category: "book", assignee: identity || "peter", priority: 2, deadline: from.endDate });
                   }
                   // Priority 3: missing QR for current identity on future bookings
@@ -1253,7 +1215,7 @@ export default function App() {
             <div>
               {loading ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
-              ) : locationGroups.length === 0 ? (
+              ) : segmentData.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO BOOKINGS YET</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
@@ -1319,22 +1281,22 @@ export default function App() {
                         </div>
                       );
                     }
-                    const { group, gi } = item;
+                    const { segment } = item;
                     // Show the departure transit's date as the location end date (more natural than checkout-minus-one)
                     const nextItem = tripTimeline[timelineIdx + 1];
-                    const displayEndDate = nextItem?.kind === "transit" ? nextItem.b.date : group.endDate;
-                    const isPast = group.endDate < today;
-                    const isActive = group.startDate <= today && today <= displayEndDate;
-                    const isCollapsed = collapsedGroups[group.location + gi];
-                    const hotelBookings = myBookings.filter(b => b.type === "hotel" && b.location === group.location && b.date >= group.startDate && b.date <= group.endDate);
+                    const displayEndDate = nextItem?.kind === "transit" ? nextItem.b.date : segment.endDate;
+                    const isPast = segment.endDate && segment.endDate < today;
+                    const isActive = segment.startDate && segment.startDate <= today && today <= (displayEndDate || segment.endDate);
+                    const isCollapsed = collapsedGroups[segment.id];
+                    const hotelBookings = myBookings.filter(b => b.type === "hotel" && b.segment_id === segment.id);
 
-                    const vibeImg = locationImages[group.location];
+                    const vibeImg = locationImages[segment.location];
 
                     return (
-                      <div key={gi} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1 }}>
+                      <div key={segment.id} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1 }}>
                         {/* Location hero header */}
                         <div
-                          onClick={() => toggleGroup(group.location + gi)}
+                          onClick={() => toggleGroup(segment.id)}
                           style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "var(--surface)", border: "1px solid var(--border)" }}
                         >
                           {vibeImg && (
@@ -1346,10 +1308,10 @@ export default function App() {
                               {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
                               <div>
                                 <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "var(--text)" : isPast ? "var(--text-faint)" : "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
-                                  {group.location}
+                                  {segment.location}
                                 </div>
                                 <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
-                                  {fmtDateShort(group.startDate)}{group.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
+                                  {fmtDateShort(segment.startDate)}{segment.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
                                   {isActive && " · now"}
                                 </div>
                               </div>
@@ -1391,7 +1353,7 @@ export default function App() {
                             ))}
 
                             {/* Days */}
-                            {group.days.map(({ date: d, bookings: dayBks }) => {
+                            {segment.days.map(({ date: d, bookings: dayBks }) => {
                               const isToday = d === today;
                               const nonHotel = dayBks.filter(b => b.type !== "hotel" && b.type !== "flight" && b.type !== "train");
                               const foodBks = nonHotel.filter(b => b.type === "food");
@@ -1548,6 +1510,28 @@ export default function App() {
                                 </div>
                               );
                             })}
+                            {/* Segment todos (Phase 3) */}
+                            {(() => {
+                              const segTodos = todos.filter(t => t.segment_id === segment.id);
+                              const mySegTodos = identity
+                                ? segTodos.filter(t => t.assignee === identity || t.assignee === "both")
+                                : segTodos;
+                              if (!mySegTodos.length) return null;
+                              return (
+                                <div style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 10 }}>
+                                  <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>want to do</div>
+                                  {mySegTodos.map(t => (
+                                    <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, paddingLeft: 2 }}>
+                                      <input type="checkbox" checked={t.done} onChange={() => handleToggleTodo(t)}
+                                        style={{ accentColor: "var(--accent)", width: 14, height: 14, flexShrink: 0 }} />
+                                      <span style={{ fontSize: 13, color: t.done ? "var(--text-tiny)" : "var(--text-muted)", fontFamily: "'Georgia', serif", textDecoration: t.done ? "line-through" : "none" }}>
+                                        {t.title}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
