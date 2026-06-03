@@ -1,363 +1,183 @@
-# China Trip 2026
+# china-trip-bookings
 
-Personal travel companion app for **Peter + 1**, Jun 8–27, 2026.
-Route: **Beijing → Yunnan (Kunming · Lijiang · Dali) → Zhangjiajie → Incheon**
-
-Live at: https://china-trip-bookings.vercel.app
-
----
-
-## What it does
-
-Three modes in one app:
-
-- **Pre-trip:** plan and track bookings, hotels, flights, trains, activities — plus a personal todo/checklist per traveler
-- **During trip:** live itinerary view grouped by location, auto-scrolls to today, offline pass viewer for QR codes and boarding passes
-- **Post-trip:** expense settlement
+Personal travel tracker for a two-person trip through China, Jun 8–27 2026. Tracks bookings, expenses, QR passes, and todos. Live at [china-trip-bookings.vercel.app](https://china-trip-bookings.vercel.app).
 
 ---
 
 ## Stack
 
-| Layer     | Tech                                              |
-|-----------|---------------------------------------------------|
-| Framework | Next.js 14 — Pages Router                         |
-| Hosting   | Vercel                                            |
-| Database  | Supabase (PostgreSQL)                             |
-| Auth      | Bearer token (`WRITE_PASSWORD`) for writes        |
-| Theme     | System light/dark via CSS `prefers-color-scheme`  |
-| Fonts     | Playfair Display, Source Code Pro                 |
-| Barcode   | `@zxing/browser` (decode) · `bwip-js` (render)   |
+| Layer | Tech |
+|---|---|
+| Frontend | Next.js 14 (Pages Router), React, inline styles |
+| Backend | Next.js API routes on Vercel |
+| Database | Supabase (Postgres) |
+| MCP server | `pages/api/mcp.js` — Claude tool access |
+| Deploy | Google Drive → Apps Script → GitHub → Vercel |
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 pages/
-  index.js                    ← Main UI (~1650 lines, single page)
+  index.js                  — full frontend (single page)
   api/
+    mcp.js                  — MCP server (JSON-RPC)
+    lib/
+      segments.js           — shared getOrCreateSegment helper
     bookings/
-      index.js                ← GET (list), POST (create)
-      [id].js                 ← PUT (edit), PATCH (settle/passes), DELETE
+      index.js              — GET list, POST create
+      [id].js               — PUT update, PATCH partial, DELETE
+    segments/
+      index.js              — GET list, POST create
+      [id].js               — PATCH rename/reorder, DELETE
     todos/
-      index.js                ← GET (list), POST (create)
-      [id].js                 ← PATCH (toggle done / edit fields), DELETE
-    mcp.js                    ← MCP server for Claude integration
-    unsplash.js               ← Unsplash image proxy (server-side key)
+      index.js              — GET list, POST create
+      [id].js               — PATCH update, DELETE
+    unsplash.js             — hero image proxy
+scripts/
+  migrate-segments.mjs      — one-time DB migration (run locally)
 ```
 
 ---
 
-## Environment Variables (Vercel)
+## Database schema
 
-```
-SUPABASE_URL                Supabase project URL
-SUPABASE_SERVICE_KEY        Service role key — server-side only, bypasses RLS
-WRITE_PASSWORD              Bearer token for all write operations from the UI
-UNSPLASH_ACCESS_KEY         Unsplash app access key for location vibe images
-NEXT_PUBLIC_FRIEND_NAME     Display name for the second traveler (e.g. "Anna")
-                            Falls back to "friend" if not set. Must be NEXT_PUBLIC_
-                            so it's bundled into the client at build time.
-```
+### `bookings`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `type` | text | `flight \| hotel \| train \| ticket \| food` |
+| `name` | text | |
+| `date` | date | |
+| `date_end` | date | checkout / end date |
+| `time` | text | departure time |
+| `time_end` | text | arrival time |
+| `origin` | text | departure city (transits) |
+| `location` | text | destination city |
+| `price` | numeric | |
+| `currency` | text | `USD \| CNY \| EUR \| KRW \| VND \| DKK` |
+| `platform` | text | booking platform |
+| `reference` | text | booking ref / flight number |
+| `notes` | text | |
+| `travelers` | text | `peter \| friend \| both` |
+| `paid_by` | text | `peter \| friend \| null` |
+| `settled` | boolean | default false |
+| `segment_id` | uuid | FK → segments |
+| `pass_code` | text | decoded QR / barcode value |
+| `pass_format` | text | `QR_CODE`, `PDF_417`, etc. |
+| `created_at` | timestamptz | |
 
----
+### `segments`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `location` | text | unique city/region name |
+| `sort_order` | integer | controls Trip tab order |
+| `created_at` | timestamptz | |
 
-## Database
-
-### Table: `bookings`
-
-| Column      | Type        | Notes                                                              |
-|-------------|-------------|--------------------------------------------------------------------|
-| id          | uuid        | Primary key, auto-generated                                        |
-| type        | text        | flight · hotel · train · ticket · food · activity                  |
-| name        | text        | Description / booking name (required)                              |
-| date        | date        | Start date (check-in for hotels)                                   |
-| date_end    | date        | End/checkout date — hotels and multi-day activities                |
-| time        | text        | Departure / check-in / start time (HH:MM)                         |
-| time_end    | text        | Arrival / check-out / end time (HH:MM)                            |
-| origin      | text        | Departure city or airport — flights and trains only                |
-| location    | text        | Destination city / region e.g. "Beijing", "Lijiang"               |
-| price       | numeric     | Optional — activities may have no price                            |
-| currency    | text        | USD · CNY · EUR · KRW · VND · DKK                                  |
-| platform    | text        | e.g. Trip.com, Booking.com, Klook                                  |
-| reference   | text        | Confirmation number or flight code                                 |
-| notes       | text        | Free-form notes                                                    |
-| travelers   | text        | peter · friend · both (default: both)                              |
-| paid_by     | text        | peter · friend · null (null = unpaid)                              |
-| settled     | boolean     | true = other person has reimbursed their share                     |
-| passes      | jsonb       | Array of `{ who, code, format }` — one entry per traveler per leg  |
-| pass_code   | text        | **Legacy** — single decoded barcode. Kept for backward compat.     |
-| pass_format | text        | **Legacy** — barcode format for pass_code. Kept for backward compat.|
-| created_at  | timestamptz | Auto-generated                                                     |
-
-**RLS:** Enabled with a permissive policy. All API routes use service role key server-side.
-
-**`activity` type:** Excluded from all expense calculations and settlement. Use for hikes, sightseeing, free plans.
-
-**`passes` column:** Each entry is `{ who: "peter"|"friend", code: string, format: string }`. Multiple entries per person are supported (multi-leg flights). `getBookingPasses()` in the frontend falls back to the legacy `pass_code`/`pass_format` columns transparently.
-
-**SQL to add new columns:**
-```sql
-ALTER TABLE public.bookings ADD COLUMN passes   jsonb DEFAULT '[]';
-ALTER TABLE public.bookings ADD COLUMN time      text;
-ALTER TABLE public.bookings ADD COLUMN time_end  text;
-ALTER TABLE public.bookings ADD COLUMN origin    text;
-```
-
-### Table: `todos`
-
-| Column     | Type        | Notes                                           |
-|------------|-------------|-------------------------------------------------|
-| id         | uuid        | Primary key, auto-generated                     |
-| title      | text        | Todo description (required)                     |
-| done       | boolean     | Default false                                   |
-| category   | text        | pack · book · docs · health · tech · do         |
-| assignee   | text        | peter · friend (no shared "both" — see below)  |
-| deadline   | date        | Optional deadline date                          |
-| created_at | timestamptz | Auto-generated                                  |
-
-```sql
-CREATE TABLE public.todos (
-  id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  title      text NOT NULL,
-  done       boolean DEFAULT false,
-  category   text DEFAULT 'do',
-  assignee   text DEFAULT 'peter',
-  created_at timestamptz DEFAULT now()
-);
-ALTER TABLE public.todos ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "allow all" ON public.todos FOR ALL USING (true) WITH CHECK (true);
-
--- Add deadline column (migration):
-ALTER TABLE public.todos ADD COLUMN IF NOT EXISTS deadline date;
-```
-
-**No shared todos:** There is no `assignee = "both"`. Selecting "both ×2" in the UI (or passing `assignee: "both"` to the MCP) creates two separate rows — one for peter, one for friend. This ensures each person's todo list is fully personal.
+### `todos`
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `title` | text | |
+| `category` | text | `pack \| book \| docs \| health \| tech \| do` |
+| `assignee` | text | `peter \| friend` |
+| `done` | boolean | default false |
+| `deadline` | date | |
+| `segment_id` | uuid | FK → segments (optional) |
+| `created_at` | timestamptz | |
 
 ---
 
-## Auth
+## API routes
 
-Write operations (POST, PUT, PATCH, DELETE) require:
-```
-Authorization: Bearer <WRITE_PASSWORD>
-```
+All write routes require `Authorization: Bearer <WRITE_PASSWORD>`. GET routes are public.
 
-Frontend stores the token in `localStorage` under key `wt`. The 🔒 button in the header triggers a password prompt; 🔓 clears it.
-
-Read access (`GET /api/bookings`, `GET /api/todos`) is always public.
-
-Pass viewing does not require write access — it only requires identity to be set (see Identity System below).
-
----
-
-## Identity System
-
-A lightweight "who are you on this device?" setting stored in `localStorage` under the key `who`. Values: `"peter"` or `"friend"`.
-
-- **Auto-popup on first visit** — picker appears automatically if no identity is set when the app loads
-- A `P` / `F` / `?` badge in the header shows current identity; tap to open the picker
-- "clear identity" link in the picker (subtle, for testing) resets to unset
-- The displayed name for `"friend"` comes from the `NEXT_PUBLIC_FRIEND_NAME` env var
-
-**Personalized view:** when identity is set, the app filters to show only bookings and todos relevant to you (`travelers = identity` or `travelers = "both"` for bookings; `assignee = identity` for todos). The Trip timeline and hotel banners are filtered the same way.
-
-**Settlement wording:** the summary modal adapts — "You owe [name]" / "[name] owes you" instead of third-person.
+| Method | Route | Description |
+|---|---|---|
+| GET | `/api/bookings` | List all bookings ordered by date |
+| POST | `/api/bookings` | Create booking (auto-creates segment) |
+| PUT | `/api/bookings/[id]` | Full update (auto-creates segment) |
+| PATCH | `/api/bookings/[id]` | Partial update (settle, etc.) |
+| DELETE | `/api/bookings/[id]` | Delete |
+| GET | `/api/segments` | List all segments ordered by sort_order |
+| POST | `/api/segments` | Create segment |
+| PATCH | `/api/segments/[id]` | Rename or reorder |
+| DELETE | `/api/segments/[id]` | Delete (blocked if bookings reference it) |
+| GET | `/api/todos` | List all todos |
+| POST | `/api/todos` | Create todo |
+| PATCH | `/api/todos/[id]` | Update todo |
+| DELETE | `/api/todos/[id]` | Delete |
+| POST | `/api/mcp` | MCP JSON-RPC endpoint |
 
 ---
 
-## API Routes
+## MCP tools
 
-| Method | Path                   | Description                                         |
-|--------|------------------------|-----------------------------------------------------|
-| GET    | `/api/bookings`        | List all bookings, ordered by date. Public.         |
-| POST   | `/api/bookings`        | Create a new booking.                               |
-| PUT    | `/api/bookings/:id`    | Full update of a booking.                           |
-| PATCH  | `/api/bookings/:id`    | Partial update — settle, update passes, etc.        |
-| DELETE | `/api/bookings/:id`    | Delete a booking.                                   |
-| GET    | `/api/todos`           | List all todos, ordered by created_at. Public.      |
-| POST   | `/api/todos`           | Create a new todo.                                  |
-| PATCH  | `/api/todos/:id`       | Toggle done or update title/category/assignee/deadline. |
-| DELETE | `/api/todos/:id`       | Delete a todo.                                      |
-| GET    | `/api/unsplash`        | Proxy Unsplash image by `?location=`. Cached 24h.   |
+Connected in Claude.ai as **"china expenses"** → `https://china-trip-bookings.vercel.app/api/mcp`
 
----
+The MCP server talks directly to Supabase with the service key — it does not go through the REST routes and does not need `WRITE_PASSWORD`.
 
-## MCP Server
-
-`/api/mcp` — Model Context Protocol server so Claude can read and write bookings and todos directly from chat.
-
-**URL:** `https://china-trip-bookings.vercel.app/api/mcp`
-**Version:** 1.3.0
-**Connected in Claude.ai as:** "china expenses"
-
-### Tools
-
-| Tool              | Description                                                                                          |
-|-------------------|------------------------------------------------------------------------------------------------------|
-| `add_booking`     | Add a booking. Supports all fields incl. `time`, `time_end`, `origin`, `date_end`, `location`.      |
-| `list_bookings`   | List all bookings, optionally filtered by type.                                                      |
-| `settle_booking`  | Mark a booking as settled by ID.                                                                     |
-| `delete_booking`  | Delete a booking by ID.                                                                              |
-| `set_pass`        | Append a decoded barcode to a booking's `passes` array. Requires `who` (`peter` or `friend`).       |
-| `add_todo`        | Add a todo. `assignee: "both"` creates two rows (one per person). Supports `deadline`.              |
-| `list_todos`      | List todos, optionally filtered by `done: true/false`.                                               |
-| `complete_todo`   | Mark a todo as done by ID.                                                                           |
-| `delete_todo`     | Delete a todo by ID.                                                                                 |
-
-MCP uses Supabase service key directly — does not go through REST routes, no `WRITE_PASSWORD` needed.
+| Tool | Description |
+|---|---|
+| `add_booking` | Add a booking; auto-creates segment from `location` |
+| `list_bookings` | List all bookings, optionally filtered by type |
+| `settle_booking` | Mark a booking as settled |
+| `delete_booking` | Delete a booking |
+| `set_pass` | Store a decoded QR / barcode for the pass viewer |
+| `add_todo` | Add a todo; `assignee: "both"` creates one per person |
+| `list_todos` | List todos, optionally filtered by done status |
+| `complete_todo` | Mark a todo as done |
+| `delete_todo` | Delete a todo |
 
 ---
 
-## Frontend — Tabs
+## Environment variables
 
-### ✦ Trip tab (default)
-- Bookings grouped by **location region**, each with an Unsplash vibe hero image
-- Active location has a pulsing blue dot; past locations are dimmed
-- **Auto-scrolls to today** on tab open
-- **Multiple hotel banners per location** — each hotel in `myBookings` for that location group is shown (e.g. a personal pre-arrival hotel + a shared main hotel both appear)
-- **Flights and trains** show `origin → destination · HH:MM → HH:MM` inline
-- **Tickets and activities** show start/end times if set
-- Day-by-day breakdown per location; non-food items expand on tap for ref/notes/links
-- **Food entries collapsed to a one-liner per day** — e.g. `🍜 3 meals · 245 CNY` — expandable
-- **Maps link on all booking types** — flights link to departure airport, trains to departure station, others to venue
-- Location groups are collapsible; state persists in `localStorage`
-- **🎫 pass button** — identity-aware: tapping opens your pass directly. When unlocked, expanded cards show per-person `+ P` / `+ F` upload buttons
-- **Identity-filtered:** when identity is set, only bookings for `travelers = identity` or `travelers = "both"` are shown
-
-### ✓ Todos tab
-- Personal checklist — each traveler sees only their own todos
-- Categories: 🧳 Pack · 📋 Book · 🛂 Docs · 💊 Health · 📱 Tech · 🎯 Do
-- **Deadlines** — optional per-todo deadline date; overdue items shown with a red "overdue" badge, upcoming with a short date. Pending todos sorted by deadline (soonest first, no deadline last)
-- **Editable todos** — ✎ button opens an inline edit form (title, category, assignee, deadline)
-- **"Both ×2"** — creating a todo for "both" creates two separate tasks, one per person
-- **Suggested section** — auto-computed from bookings at render time (not stored):
-  - Missing hotel per future location group (priority 1)
-  - Missing transport between consecutive city groups (priority 2)
-  - Missing QR for future bookings with no uploaded pass (priority 3, identity required)
-- Progress bar showing done/total
-- Filter by category (shown always); "for" filter only shown when no identity is set
-- **Optimistic UI** — modal closes and todo appears instantly; API call happens in background; rolls back on error
-- Offline read — last known state served from `localStorage` cache
-- Filter state persisted in `localStorage`
-
-### Expenses tab
-- Full list of bookings filtered to current identity (`myBookings`)
-- Filters: type, travelers, paid-by, settled status
-- **¥ summary button** opens a bottom-sheet with settlement snapshot (identity-aware wording), per-currency totals, and category breakdown
-- Add / edit / delete / settle actions (write mode only, revealed on hover)
-- Filter state persists in `localStorage`
-
-### Summary modal (inside Expenses)
-- Settlement snapshot across all currencies with DKK conversion — uses **all** bookings regardless of identity filter (settlement is shared accounting)
-- Wording adapts to identity: "You owe [name]" / "[name] owes you" / third-person when no identity
-- Live exchange rates from open.er-api.com, refreshable
-- Per-category breakdown (activity type excluded)
+| Variable | Used by |
+|---|---|
+| `SUPABASE_URL` | All API routes + MCP |
+| `SUPABASE_SERVICE_KEY` | All API routes + MCP (server-side only) |
+| `WRITE_PASSWORD` | REST write routes |
+| `NEXT_PUBLIC_FRIEND_NAME` | Frontend — travel companion's display name |
+| `UNSPLASH_ACCESS_KEY` | Hero image fetching (optional) |
 
 ---
 
-## Pass Viewer
+## Deploy pipeline
 
-Boarding passes, train ticket QR codes, and event tickets stored per traveler, viewable offline.
+Files live in a Google Drive folder (`china-trip-sync/`) that mirrors the repo structure. A Google Apps Script (`syncToDrive()`) syncs them to GitHub, and Vercel auto-deploys on push.
 
-**How it works:**
-1. Set your identity (tap `?` badge in header → pick your name) — one-time setup per device
-2. When unlocked, expand any flight/train/ticket card to see `+ P` / `+ F` upload buttons
-3. Pick a screenshot from your camera roll; `@zxing/browser` decodes the barcode client-side
-4. Decoded pass is appended to the `passes` JSONB array in Postgres tagged with `who`
-5. Tapping 🎫 opens your pass directly — no picker needed
-6. Multiple legs (connecting flights): `‹ 1/2 ›` arrows to navigate between passes for the same traveler
-7. `bwip-js` re-renders the barcode live — crisp at any screen size
-8. Works offline after first decode (data cached in `bookings_cache` localStorage)
-9. Synced across both devices via Postgres
+**To deploy a change:**
+1. Upload changed file(s) to the correct Drive subfolder
+2. Run `syncToDrive()` in Apps Script
+3. Vercel deploys automatically
 
-**Backward compatibility:** Old `pass_code` / `pass_format` single-pass records are read transparently and displayed as a Peter pass.
-
-**Via MCP:** `set_pass(id, code, format, who)` appends directly to the passes array.
+`index.js` is uploaded to Drive manually (too large for MCP context). Small API files can be pushed via the Claude Drive integration.
 
 ---
 
-## Settlement Logic
+## One-time DB migration
 
-For unsettled bookings where `paid_by` is set and type is not `activity`:
-
-```
-pOwes += peterShare(booking) - amountPeterFronted
-```
-
-- `travelers = "both"` → Peter's share is 50%
-- `travelers = "peter"` → Peter's share is 100%
-- `travelers = "friend"` → Peter's share is 0%
-- `pOwes > 0` → Peter owes friend · `pOwes < 0` → Friend owes Peter
-
-Settlement always uses the full unfiltered bookings list — identity filtering only affects the Trip and Expenses display views.
-
----
-
-## Theme
-
-Automatically matches Android/iOS system setting via CSS `prefers-color-scheme`. All colors defined as CSS variables in the `<style>` block — no JS state needed for theme switching.
-
----
-
-## localStorage Keys
-
-| Key              | Value                                        |
-|------------------|----------------------------------------------|
-| `wt`             | Write token                                  |
-| `who`            | Identity: `"peter"` or `"friend"`            |
-| `ft`             | Filter types (JSON array)                    |
-| `fs`             | Filter settled                               |
-| `ftr`            | Filter travelers                             |
-| `fp`             | Filter paid-by                               |
-| `sf`             | Show filters toggle                          |
-| `tab`            | Active tab (`trip`, `todos`, `expenses`)     |
-| `cg`             | Collapsed location groups (JSON)             |
-| `tfc`            | Todo filter category                         |
-| `tfa`            | Todo filter assignee (no-identity mode only) |
-| `bookings_cache` | Last known bookings list (JSON) — offline    |
-| `todos_cache`    | Last known todos list (JSON) — offline       |
-
----
-
-## Deploy Pipeline
-
-Files in Google Drive `china-trip-sync/` mirror the repo:
-
-```
-china-trip-sync/
-  package.json
-  pages/
-    index.js              ← TOO LARGE for Drive sync — upload manually to GitHub
-    api/
-      mcp.js
-      unsplash.js
-      bookings/
-        index.js
-        [id].js
-      todos/
-        index.js
-        [id].js
-```
-
-**Drive folder IDs:**
-- `pages/` → `1UMmqfu9ElFojFem7fMtVE512kwX3AIJw`
-- `pages/api/` → `1Clz8BK6ZzVTPsKG04HzrobNm3frvaWf-`
-- `pages/api/bookings/` → `1VAwKI0VK2vJJ4D_g4ayNtiRsVF2vQxwH`
-- `pages/api/todos/` → `1prOB-1yVMNco4biPodtsssnSW5YopiHa`
-
-**To deploy small API files:** upload to Drive → run `syncToDrive()` in Apps Script → Vercel auto-deploys from GitHub (`petrovito/china-trip-bookings`).
-
-**`index.js`:** upload manually to GitHub — too large for the Drive/Apps Script pipeline.
-
----
-
-## Local Development
+After adding the `segments` table and `segment_id` columns, back-fill existing bookings:
 
 ```bash
-npm install
-# Create .env.local with the env vars listed above
-npm run dev
-# Open http://localhost:3000
+npm install dotenv          # if not already installed
+node scripts/migrate-segments.mjs
 ```
+
+Requires `.env.local` with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`. Safe to re-run.
+
+---
+
+## Frontend features
+
+- **Identity system** — first-load picker saves `peter` or friend's name to localStorage; personalises all views
+- **Trip tab** — city segments pulled from DB, ordered by `sort_order`; transits interleaved by destination matching; Unsplash hero images per city
+- **Todos** — per-person visibility, inline editing, deadlines with overdue badges, optimistic creation; "do" and "book" todos can be pinned to a segment and appear under that city in the Trip tab
+- **Auto-todos** — computed suggestions (never stored): missing hotels, missing transport between cities, missing QR codes
+- **Pass viewer** — full-screen QR / barcode renderer for offline boarding pass access
+- **Summary tab** — per-currency totals, settlement calculation, by-category breakdown
+- **Filters** — travelers, paid-by, status, type (multi-select); persisted to localStorage
+- **Auth** — 🔒 button → password → stored as `wt` in localStorage; 401 shows toast
