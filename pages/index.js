@@ -564,28 +564,21 @@ export default function App() {
     });
   }, [segments, myBookings]);
 
-  // Flat timeline: transits string-matched to their destination segment, appearing before it
+  // Flat timeline: all transits and segments sorted chronologically.
+  // Transits sort before segments on the same date (arrival before city header).
   const tripTimeline = useMemo(() => {
-    const transits = myBookings
-      .filter(b => b.type === "flight" || b.type === "train")
-      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-
-    const placed = new Set();
-    const result = [];
-
-    segmentData.forEach(seg => {
-      transits
-        .filter(t => t.location === seg.location)
-        .forEach(t => { result.push({ kind: "transit", b: t }); placed.add(t.id); });
-      result.push({ kind: "segment", segment: seg });
+    const transits = myBookings.filter(b => b.type === "flight" || b.type === "train");
+    const items = [
+      ...segmentData.map(seg  => ({ kind: "segment", segment: seg, _date: seg.startDate || "" })),
+      ...transits.map(t       => ({ kind: "transit", b: t,         _date: t.date        || "" })),
+    ];
+    items.sort((a, b) => {
+      if (a._date !== b._date) return a._date.localeCompare(b._date);
+      if (a.kind === "transit" && b.kind === "segment") return -1;
+      if (a.kind === "segment" && b.kind === "transit") return  1;
+      return 0;
     });
-
-    // Unmatched transits fall to the end
-    transits
-      .filter(t => !placed.has(t.id))
-      .forEach(t => result.push({ kind: "transit", b: t }));
-
-    return result;
+    return items;
   }, [segmentData, myBookings]);
 
   function toggleCard(id) {
