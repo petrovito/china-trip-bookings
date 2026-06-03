@@ -18,6 +18,7 @@ const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
   time: "", time_end: "", origin: "",
+  reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
 // Types excluded from expense tracking
@@ -420,9 +421,37 @@ export default function App() {
     if (editId) {
       const r = await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
+      // Auto-complete linked todos when booking transitions from unpaid → paid
+      const prev = bookings.find(b => b.id === editId);
+      if (!prev?.paid_by && payload.paid_by) {
+        const linked = todos.filter(t => t.booking_id === editId && !t.done);
+        await Promise.all(linked.map(t =>
+          fetch(`/api/todos/${t.id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ done: true }) })
+        ));
+        if (linked.length) await fetchTodos();
+      }
     } else {
       const r = await fetch("/api/bookings", { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
+      const newBooking = await r.json();
+      // Create linked reminder todo(s)
+      if (form.reminder && newBooking?.id) {
+        const todoTitle = form.reminderType === "prepare" ? `Prepare: ${form.name}` : `Buy: ${form.name}`;
+        const todoCategory = form.reminderType === "prepare" ? "pack" : "book";
+        const assignees = form.reminderAssignee === "both" ? ["peter", "friend"] : [identity || "peter"];
+        await Promise.all(assignees.map(assignee =>
+          fetch("/api/todos", {
+            method: "POST", headers: authedHeaders,
+            body: JSON.stringify({
+              title: todoTitle, category: todoCategory, assignee,
+              booking_id: newBooking.id,
+              segment_id: newBooking.segment_id || null,
+              deadline: form.date || null,
+            }),
+          })
+        ));
+        await fetchTodos();
+      }
     }
     await fetchBookings();
     showToast(editId ? "Booking updated" : "Booking added");
@@ -791,6 +820,42 @@ export default function App() {
                   <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inp, resize: "vertical" }} />
                 </div>
               </div>
+              {/* Reminder todo — only on new bookings */}
+              {!editId && (
+                <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 12, marginTop: 4 }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                    <input type="checkbox" checked={form.reminder} onChange={e => setForm(f => ({ ...f, reminder: e.target.checked }))}
+                      style={{ accentColor: "var(--accent)", width: 14, height: 14 }} />
+                    <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>📋 create a reminder todo</span>
+                  </label>
+                  {form.reminder && (
+                    <div style={{ marginTop: 10, paddingLeft: 22, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                        {[{ id: "buy", label: "buy online" }, { id: "book", label: "book in person" }, { id: "prepare", label: "prepare & pack" }].map(rt => (
+                          <button key={rt.id} className="btn" onClick={() => setForm(f => ({ ...f, reminderType: rt.id }))}
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace",
+                              border: `1.5px solid ${form.reminderType === rt.id ? "var(--accent)" : "var(--border)"}`,
+                              background: form.reminderType === rt.id ? "var(--accent)20" : "transparent",
+                              color: form.reminderType === rt.id ? "var(--accent)" : "var(--text-faint)" }}>
+                            {rt.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        {[{ v: "me", label: `just ${identity || "me"}` }, { v: "both", label: "both of us" }].map(({ v, label }) => (
+                          <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, reminderAssignee: v }))}
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace",
+                              border: `1.5px solid ${form.reminderAssignee === v ? "var(--accent)" : "var(--border)"}`,
+                              background: form.reminderAssignee === v ? "var(--accent)20" : "transparent",
+                              color: form.reminderAssignee === v ? "var(--accent)" : "var(--text-faint)" }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
                 <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
                 <button className="btn" onClick={handleSubmit} disabled={saving || !form.name}
@@ -907,6 +972,7 @@ export default function App() {
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
                           {!b.paid_by && b.type !== "activity" && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
                           {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
+                          {todos.some(t => t.booking_id === b.id && !t.done) && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", background: "var(--accent)18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>📋 todo</span>}
                           <span style={{ fontSize: 14.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{b.name}</span>
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
@@ -1153,7 +1219,10 @@ export default function App() {
                                     style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${todo.done ? "#10b981" : "var(--border2)"}`, background: todo.done ? "#10b98120" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#10b981", padding: 0 }}>
                                     {todo.done ? "✓" : ""}
                                   </button>
-                                  <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", textDecoration: todo.done ? "line-through" : "none", lineHeight: 1.4 }}>{todo.title}</span>
+                                  <span style={{ flex: 1, fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", textDecoration: todo.done ? "line-through" : "none", lineHeight: 1.4 }}>
+                                    {todo.title}
+                                    {todo.booking_id && (() => { const bk = bookings.find(b => b.id === todo.booking_id); return bk ? <span style={{ display: "block", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 2 }}>↗ {bk.name}</span> : null; })()}
+                                  </span>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
                                     {todo.deadline && !todo.done && (
                                       <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.02em", color: todo.deadline < today ? "#ef4444" : "var(--text-tiny)", background: todo.deadline < today ? "#ef444415" : "transparent", borderRadius: 3, padding: "1px 4px" }}>
