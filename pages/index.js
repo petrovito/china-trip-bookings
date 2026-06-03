@@ -1284,7 +1284,7 @@ export default function App() {
                     const { segment } = item;
                     // Show the departure transit's date as the location end date (more natural than checkout-minus-one)
                     const nextItem = tripTimeline[timelineIdx + 1];
-                    const displayEndDate = nextItem?.kind === "transit" ? nextItem.b.date : segment.endDate;
+                    const displayEndDate = (nextItem?.kind === "transit" && nextItem.b.date >= segment.startDate) ? nextItem.b.date : segment.endDate;
                     const isPast = segment.endDate && segment.endDate < today;
                     const isActive = segment.startDate && segment.startDate <= today && today <= (displayEndDate || segment.endDate);
                     const isCollapsed = collapsedGroups[segment.id];
