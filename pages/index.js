@@ -940,7 +940,7 @@ export default function App() {
                       <div key={b.id} className="card" style={{ background: b.paid_by ? "var(--surface)" : "var(--surface)", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "var(--text-tiny)"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
                         {canWrite && (
                           <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
-                            {b.paid_by && b.travelers === "both" && (
+                            {b.paid_by && (b.travelers === "both" || !b.travelers) && (
                               <button className="btn" onClick={() => handleSettle(b.id, b.settled)}
                                 style={{ background: "transparent", color: b.settled ? "var(--text-faint)" : "#10b981", fontSize: 11, padding: "2px 6px", fontFamily: "'Source Code Pro', monospace", border: `1px solid ${b.settled ? "#64748b40" : "#10b98140"}`, borderRadius: 4 }}>{b.settled ? "unsettle ↩" : "settle ✓"}</button>
                             )}
