@@ -404,8 +404,16 @@ export default function App() {
     showToast("Pass removed");
   }
 
+  function apiBase(type) {
+    if (type === "flight" || type === "train") return "/api/transport";
+    if (type === "hotel") return "/api/accommodation";
+    return "/api/experiences";
+  }
+
   async function handleSubmit() {
-    if (!form.name) return;
+    const isTransport = form.type === "flight" || form.type === "train";
+    // Transport name is auto-generated server-side; other types require a name
+    if (!form.name && !isTransport) return;
     setSaving(true);
     const payload = {
       ...form,
@@ -418,8 +426,9 @@ export default function App() {
       time_end: form.time_end || null,
       origin: form.origin || null,
     };
+    const base = apiBase(form.type);
     if (editId) {
-      const r = await fetch(`/api/bookings/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
+      const r = await fetch(`${base}/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
       // Auto-complete linked todos when booking transitions from unpaid → paid
       const prev = bookings.find(b => b.id === editId);
@@ -431,7 +440,7 @@ export default function App() {
         if (linked.length) await fetchTodos();
       }
     } else {
-      const r = await fetch("/api/bookings", { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
+      const r = await fetch(base, { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
       const newBooking = await r.json();
       // Create linked reminder todo(s)
@@ -464,12 +473,18 @@ export default function App() {
   }
 
   function handleEdit(b) {
+    const isTransport = b.type === "flight" || b.type === "train";
+    // For legacy transport bookings where origin wasn't stored separately, parse from name
+    let origin = b.origin || "";
+    if (!origin && isTransport && b.name?.includes(" → ")) {
+      origin = b.name.split(" → ")[0].trim();
+    }
     setForm({
       type: b.type, name: b.name, date: b.date || "", date_end: b.date_end || "",
       price: b.price != null ? String(b.price) : "", currency: b.currency || "USD",
       platform: b.platform || "", reference: b.reference || "", notes: b.notes || "",
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
-      time: b.time || "", time_end: b.time_end || "", origin: b.origin || "",
+      time: b.time || "", time_end: b.time_end || "", origin,
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -778,7 +793,7 @@ export default function App() {
                     </select>
                   </div>
                 )}
-                <input placeholder="Location (e.g. Beijing)" value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
+                <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
                 {(form.type === "flight" || form.type === "train") && (
                   <div style={{ gridColumn: "1 / -1" }}>
