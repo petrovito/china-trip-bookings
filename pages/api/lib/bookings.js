@@ -25,6 +25,15 @@ function pick(...values) {
   return undefined;
 }
 
+// Like pick(), but also skips empty strings — for fields that have non-null defaults
+// (travelers, currency) where an empty string from the client should fall through.
+function pickNonEmpty(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== "") return value;
+  }
+  return undefined;
+}
+
 function reminderAssignees(body = {}) {
   if (body.reminderAssignee === "both") return ["peter", "friend"];
   if (body.reminderAssignee === "peter" || body.reminderAssignee === "friend") return [body.reminderAssignee];
@@ -51,11 +60,11 @@ function baseBookingFields(body = {}, existing = {}) {
     origin: toNull(pick(body.origin, existing.origin)),
     location: toNull(pick(body.location, existing.location)),
     price: toNumber(pick(body.price, existing.price)),
-    currency: pick(body.currency, existing.currency, DEFAULTS.currency),
+    currency: pickNonEmpty(body.currency, existing.currency, DEFAULTS.currency),
     platform: toNull(pick(body.platform, existing.platform)),
     reference: toNull(pick(body.reference, existing.reference)),
     notes: toNull(pick(body.notes, existing.notes)),
-    travelers: pick(body.travelers, existing.travelers, DEFAULTS.travelers),
+    travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
   };
 }
@@ -92,11 +101,11 @@ function buildAccommodationPayload(body = {}, existing = {}, { forInsert = false
     time_end: toNull(pick(body.check_out_time, body.time_end, existing.time_end)),
     location: toNull(pick(body.location, existing.location)),
     price: toNumber(pick(body.price, existing.price)),
-    currency: pick(body.currency, existing.currency, DEFAULTS.currency),
+    currency: pickNonEmpty(body.currency, existing.currency, DEFAULTS.currency),
     platform: toNull(pick(body.platform, existing.platform)),
     reference: toNull(pick(body.reference, existing.reference)),
     notes: toNull(pick(body.notes, existing.notes)),
-    travelers: pick(body.travelers, existing.travelers, DEFAULTS.travelers),
+    travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
   };
 
@@ -114,11 +123,11 @@ function buildExperiencePayload(body = {}, existing = {}, { forInsert = false } 
     time: toNull(pick(body.time, existing.time)),
     location: toNull(pick(body.location, existing.location)),
     price: toNumber(pick(body.price, existing.price)),
-    currency: pick(body.currency, existing.currency, DEFAULTS.currency),
+    currency: pickNonEmpty(body.currency, existing.currency, DEFAULTS.currency),
     platform: toNull(pick(body.platform, existing.platform)),
     reference: toNull(pick(body.reference, existing.reference)),
     notes: toNull(pick(body.notes, existing.notes)),
-    travelers: pick(body.travelers, existing.travelers, DEFAULTS.travelers),
+    travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
   };
 
@@ -226,6 +235,9 @@ async function applyUpdate(kind, id, body = {}) {
   const segment_id = await getOrCreateSegment(payload.type, payload.location);
   const updatePayload = { ...payload, segment_id };
 
+  // Intentional partial-update semantics: if settled is not provided in the request body,
+  // we preserve the existing DB value rather than defaulting to false.
+  // Callers that need to explicitly clear settled should send settled: false.
   if (body.settled === undefined) delete updatePayload.settled;
 
   const { data, error } = await supabase
@@ -252,26 +264,3 @@ export async function updateBookingRecord(kind, id, body = {}) {
   return applyUpdate(kind, id, body);
 }
 
-export function normalizeBookingInput(input = {}, overrides = {}) {
-  const type = overrides.type ?? input.type ?? DEFAULTS.type;
-  const name = overrides.name ?? input.name ?? null;
-
-  return {
-    type,
-    name,
-    date: toNull(input.date),
-    date_end: toNull(input.date_end),
-    time: toNull(input.time),
-    time_end: toNull(input.time_end),
-    origin: toNull(input.origin),
-    location: toNull(input.location),
-    price: toNumber(input.price),
-    currency: input.currency || DEFAULTS.currency,
-    platform: toNull(input.platform),
-    reference: toNull(input.reference),
-    notes: toNull(input.notes),
-    travelers: input.travelers || DEFAULTS.travelers,
-    paid_by: toNull(input.paid_by),
-    settled: input.settled ?? false,
-  };
-}

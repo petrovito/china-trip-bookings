@@ -511,11 +511,18 @@ export default function App() {
   }
 
   useEffect(() => {
+    // Fetch rates and summary when the summary panel first opens
     if (showSummary) {
       fetchRates();
       fetchSummary();
     }
-  }, [showSummary, bookings]);
+  }, [showSummary]);
+
+  useEffect(() => {
+    // Re-fetch summary when bookings change and the panel is already open,
+    // so totals stay current after any create/update/delete.
+    if (showSummary) fetchSummary();
+  }, [bookings]);
 
   // Fetch Unsplash vibe image for each location when trip tab opens
   useEffect(() => {
@@ -545,10 +552,6 @@ export default function App() {
     .filter(b => filterPaidBy === "all" || (filterPaidBy === "pending" ? !b.paid_by : b.paid_by === filterPaidBy));
 
   const summaryCurrencies = summary?.currencies || [];
-  const summaryByCurrency = useMemo(
-    () => Object.fromEntries(summaryCurrencies.map(item => [item.currency, item])),
-    [summaryCurrencies]
-  );
 
   // Trip tab helpers
   const today = toDateStr(new Date());
@@ -1750,18 +1753,17 @@ export default function App() {
                     );
                   })()}
                   {summaryCurrencies.map(({ currency, total, pendingTotal, count, pendingCount, settledCount, byCategory }) => {
-                    const summaryItem = summaryByCurrency[currency] || { byCategory: {} };
                     const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                     const fmt2 = v => `${sym}${Number(v || 0).toFixed(2)} ${sym ? "" : currency}`.trim();
                     return (
                       <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                         <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ {currency} ──────────────────────────</div>
-                        <SummaryCard label="Total committed" value={fmt2(summaryItem.total)} color="var(--text)" sub={`${summaryItem.count} item${summaryItem.count !== 1 ? "s" : ""}${summaryItem.pendingCount ? ` · ${summaryItem.pendingCount} pending` : ""}${summaryItem.settledCount ? ` · ${summaryItem.settledCount} settled` : ""}`} />
-                        {summaryItem.pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(summaryItem.pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
+                        <SummaryCard label="Total committed" value={fmt2(total)} color="var(--text)" sub={`${count} item${count !== 1 ? "s" : ""}${pendingCount ? ` · ${pendingCount} pending` : ""}${settledCount ? ` · ${settledCount} settled` : ""}`} />
+                        {pendingTotal > 0 && <SummaryCard label="Pending payment" value={fmt2(pendingTotal)} color="#f59e0b" sub="not yet paid by anyone" />}
                         <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
                           <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>By category</div>
                           {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                            const catTotal = summaryItem.byCategory?.[t.id] || 0;
+                            const catTotal = byCategory?.[t.id] || 0;
                             if (!catTotal) return null;
                             return (
                               <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
