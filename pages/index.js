@@ -18,6 +18,7 @@ const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
   time: "", time_end: "", origin: "",
+  map_query: "", map_provider: "amap", map_lat: "", map_lng: "", map_place_id: "",
   reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
@@ -92,6 +93,58 @@ function fmtDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function hasCjk(text = "") {
+  return /[㐀-鿿぀-ヿ가-힯]/.test(text);
+}
+
+function deriveMapQuery(b = {}) {
+  const explicit = (b.map_query || "").trim();
+  if (explicit) return explicit;
+  const name = (b.name || "").trim();
+  const location = (b.location || "").trim();
+  const origin = (b.origin || "").trim();
+
+  if (b.type === "flight") {
+    const city = location ? `${location} ` : "";
+    return origin ? `${origin} airport` : `${city}airport`.trim();
+  }
+  if (b.type === "train") {
+    const city = location ? `${location} ` : "";
+    return origin ? `${origin} railway station` : `${city}railway station`.trim();
+  }
+  if (name && location) return `${name}, ${location}`;
+  return name || location || "";
+}
+
+function resolveMapProvider(b = {}) {
+  const provider = (b.map_provider || "amap").toLowerCase();
+  if (provider === "google" || provider === "amap") return provider;
+  const query = `${b.map_query || ""} ${b.name || ""} ${b.location || ""} ${b.origin || ""}`;
+  return hasCjk(query) ? "amap" : "google";
+}
+
+function mapsLink(b) {
+  const provider = resolveMapProvider(b);
+  const query = deriveMapQuery(b);
+  const lat = b.map_lat ?? b.lat;
+  const lng = b.map_lng ?? b.lng;
+
+  if (provider === "google") {
+    const googleQuery = lat != null && lng != null && lat !== "" && lng !== ""
+      ? `${lat},${lng}`
+      : query || b.name || b.location || b.origin || "China";
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(googleQuery)}`;
+  }
+
+  if (lat != null && lng != null && lat !== "" && lng !== "") {
+    const label = query || b.name || b.location || "Location";
+    return `https://uri.amap.com/marker?position=${encodeURIComponent(`${lng},${lat}`)}&name=${encodeURIComponent(label)}&src=tripbookings&coordinate=gaode&callnative=0`;
+  }
+
+  const amapQuery = query || b.name || b.location || b.origin || "China";
+  return `https://uri.amap.com/search?keyword=${encodeURIComponent(amapQuery)}&src=tripbookings&callnative=0`;
 }
 
 export default function App() {
@@ -425,6 +478,11 @@ export default function App() {
       time: form.time || null,
       time_end: form.time_end || null,
       origin: form.origin || null,
+      map_query: (form.map_query || deriveMapQuery(form) || null),
+      map_provider: form.map_provider || "amap",
+      map_lat: form.map_lat || null,
+      map_lng: form.map_lng || null,
+      map_place_id: form.map_place_id || null,
     };
     const base = apiBase(form.type);
     if (editId) {
@@ -485,6 +543,10 @@ export default function App() {
       platform: b.platform || "", reference: b.reference || "", notes: b.notes || "",
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
       time: b.time || "", time_end: b.time_end || "", origin,
+      map_query: b.map_query || deriveMapQuery(b), map_provider: b.map_provider || "amap",
+      map_lat: b.map_lat != null ? String(b.map_lat) : "",
+      map_lng: b.map_lng != null ? String(b.map_lng) : "",
+      map_place_id: b.map_place_id || "",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -643,18 +705,6 @@ export default function App() {
     return null;
   }
 
-  function mapsLink(b) {
-    if (b.type === "flight") {
-      const place = b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name;
-      return `https://maps.google.com/?q=${encodeURIComponent(place)}`;
-    }
-    if (b.type === "train") {
-      const place = b.origin ? `${b.origin} railway station` : b.location ? `${b.location} railway station China` : b.name;
-      return `https://maps.google.com/?q=${encodeURIComponent(place)}`;
-    }
-    const query = b.location ? `${b.name}, ${b.location}, China` : `${b.name}, China`;
-    return `https://maps.google.com/?q=${encodeURIComponent(query)}`;
-  }
 
   const showDateEnd = form.type === "hotel" || form.type === "activity" || form.type === "ticket";
 
@@ -794,6 +844,13 @@ export default function App() {
                   </div>
                 )}
                 <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input placeholder="Map search keyword (optional)" value={form.map_query} onChange={e => setForm(f => ({ ...f, map_query: e.target.value }))} style={{ ...inp, flex: 1 }} />
+                  <select value={form.map_provider} onChange={e => setForm(f => ({ ...f, map_provider: e.target.value }))} style={{ ...inp, width: 110, flexShrink: 0 }}>
+                    <option value="amap">Amap</option>
+                    <option value="google">Google</option>
+                  </select>
+                </div>
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
                 {(form.type === "flight" || form.type === "train") && (
                   <div style={{ gridColumn: "1 / -1" }}>
@@ -1374,27 +1431,22 @@ export default function App() {
                         {/* Location hero header */}
                         <div
                           onClick={() => toggleGroup(segment.id)}
-                          style={{ position: "relative", borderRadius: 16, overflow: "hidden", marginBottom: isCollapsed ? 0 : 14, cursor: "pointer", minHeight: 98, background: "var(--surface)", border: "1px solid var(--border2)", boxShadow: "0 10px 28px rgba(0,0,0,0.22)" }}
+                          style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "var(--surface)", border: "1px solid var(--border)" }}
                         >
                           {vibeImg && (
                             <div className="hero-img" style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center" }} />
                           )}
                           <div style={{ position: "absolute", inset: 0, background: "var(--hero-overlay)" }} />
-                          <div style={{ position: "relative", padding: "18px 18px 18px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+                          <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                               {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
                               <div>
                                 <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "var(--text)" : isPast ? "var(--text-faint)" : "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                                   {segment.location}
                                 </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                                  <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                    {fmtDateShort(segment.startDate)}{segment.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
-                                    {isActive && " · now"}
-                                  </div>
-                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", border: "1px solid var(--border)", borderRadius: 999, padding: "2px 8px", background: "rgba(255,255,255,0.02)" }}>
-                                    segment
-                                  </span>
+                                <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
+                                  {fmtDateShort(segment.startDate)}{segment.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
+                                  {isActive && " · now"}
                                 </div>
                               </div>
                             </div>
@@ -1403,7 +1455,7 @@ export default function App() {
                         </div>
 
                         {!isCollapsed && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 0, padding: "14px 14px 16px 18px", borderLeft: "3px solid rgba(14,165,233,0.34)", marginLeft: 18, background: "linear-gradient(180deg, rgba(18,21,30,0.7), rgba(18,21,30,0.55))" }}>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
                             {/* Hotel banners */}
                             {hotelBookings.map(hotelBooking => (
                               <div key={hotelBooking.id} style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -1478,7 +1530,7 @@ export default function App() {
                                     return (
                                       <div key={b.id} className="trip-card"
                                         onClick={() => hasDetails && toggleCard(b.id)}
-                                        style={{ background: "var(--surface)", borderRadius: 8, padding: "10px 14px", marginBottom: 6, borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
+                                        style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", marginBottom: 6, borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
                                             <span style={{ fontSize: 14 }}>{t.icon}</span>
@@ -1571,7 +1623,7 @@ export default function App() {
                                     <div>
                                       <div className="trip-card"
                                         onClick={() => setExpandedFoodDays(p => ({ ...p, [d]: !p[d] }))}
-                                        style={{ background: "var(--surface)", borderRadius: 8, padding: "8px 14px", marginBottom: isFoodExpanded ? 0 : 6, borderLeft: "3px solid #e879f9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                        style={{ background: "var(--surface)", borderRadius: 7, padding: "8px 14px", marginBottom: isFoodExpanded ? 0 : 6, borderLeft: "3px solid #e879f9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                           <span style={{ fontSize: 13 }}>🍜</span>
                                           <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
