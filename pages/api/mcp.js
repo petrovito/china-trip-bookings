@@ -22,29 +22,89 @@ async function getOrCreateSegment(type, location) {
   return created.id;
 }
 
+const SHARED_FIELDS = {
+  price:     { type: "number",  description: "Price as a number — omit for free activities" },
+  currency:  { type: "string",  enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency — defaults to USD" },
+  platform:  { type: "string",  description: "Booking platform e.g. Trip.com, Klook, Booking.com" },
+  reference: { type: "string",  description: "Booking reference or confirmation number" },
+  notes:     { type: "string",  description: "Extra details" },
+  travelers: { type: "string",  enum: ["peter", "friend", "both"], description: "Who this is for — defaults to both" },
+  paid_by:   { type: "string",  enum: ["peter", "friend"], description: "Who paid — omit if unpaid" },
+};
+
 const TOOLS = [
+  // ── Typed tools (preferred) ──────────────────────────────────────────────
   {
-    name: "add_booking",
-    description: "Add a booking to Peter's China Trip 2026 tracker",
+    name: "add_transport",
+    description: "Add a flight or train to Peter's China Trip 2026 tracker",
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"], description: "Type of booking. Use 'activity' for plans that don't involve tracked expenses." },
-        name: { type: "string", description: "Name / description of the booking" },
-        date: { type: "string", description: "Start date in YYYY-MM-DD format" },
-        date_end: { type: "string", description: "End/checkout date in YYYY-MM-DD format — use for hotels (checkout), multi-day activities, etc." },
-        location: { type: "string", description: "City or region, e.g. 'Beijing', 'Zhangjiajie'. Used to group bookings in the trip view." },
-        price: { type: "number", description: "Price as a number — omit for free activities" },
-        currency: { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency — defaults to USD" },
-        platform: { type: "string", description: "Booking platform e.g. Trip.com, Klook, Booking.com" },
-        reference: { type: "string", description: "Booking reference or flight number(s)" },
-        notes: { type: "string", description: "Extra details — timings, room type, etc." },
-        travelers: { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for — defaults to both" },
-        paid_by: { type: "string", enum: ["peter", "friend"], description: "Who paid — omit if unpaid" },
+        type:        { type: "string", enum: ["flight", "train"], description: "flight or train" },
+        origin:      { type: "string", description: "Departure city or airport code, e.g. 'Changsha' or 'CSX'" },
+        destination: { type: "string", description: "Arrival city or airport code, e.g. 'Zhangjiajie West' or 'ZJJ'" },
+        date:        { type: "string", description: "Departure date in YYYY-MM-DD format" },
+        departs:     { type: "string", description: "Departure time in HH:MM format, e.g. '07:23'" },
+        arrives:     { type: "string", description: "Arrival time in HH:MM format, e.g. '09:45'" },
+        ...SHARED_FIELDS,
+      },
+      required: ["type", "origin", "destination"],
+    },
+  },
+  {
+    name: "add_accommodation",
+    description: "Add a hotel or accommodation to Peter's China Trip 2026 tracker",
+    inputSchema: {
+      type: "object",
+      properties: {
+        name:          { type: "string", description: "Hotel or property name" },
+        location:      { type: "string", description: "City, e.g. 'Beijing'" },
+        check_in:      { type: "string", description: "Check-in date in YYYY-MM-DD format" },
+        check_out:     { type: "string", description: "Check-out date in YYYY-MM-DD format" },
+        check_in_time: { type: "string", description: "Check-in time in HH:MM format, e.g. '14:00'" },
+        check_out_time:{ type: "string", description: "Check-out time in HH:MM format, e.g. '11:00'" },
+        ...SHARED_FIELDS,
+      },
+      required: ["name", "location"],
+    },
+  },
+  {
+    name: "add_experience",
+    description: "Add a ticket, activity, restaurant, or food booking to Peter's China Trip 2026 tracker",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type:     { type: "string", enum: ["ticket", "food", "activity"], description: "ticket=attraction/museum, food=restaurant, activity=other plan" },
+        name:     { type: "string", description: "Name of the attraction, restaurant, or activity" },
+        location: { type: "string", description: "City, e.g. 'Beijing'" },
+        date:     { type: "string", description: "Date in YYYY-MM-DD format" },
+        time:     { type: "string", description: "Start time in HH:MM format" },
+        ...SHARED_FIELDS,
       },
       required: ["type", "name"],
     },
   },
+  // ── Legacy (kept for backward compat) ────────────────────────────────────
+  {
+    name: "add_booking",
+    description: "Add a booking to Peter's China Trip 2026 tracker. Prefer add_transport / add_accommodation / add_experience when the type is known.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type:     { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"] },
+        name:     { type: "string", description: "Name / description of the booking" },
+        date:     { type: "string", description: "Start date in YYYY-MM-DD format" },
+        date_end: { type: "string", description: "End/checkout date in YYYY-MM-DD format" },
+        location: { type: "string", description: "City or region" },
+        origin:   { type: "string", description: "Departure city/airport — for flights and trains" },
+        time:     { type: "string", description: "Departure / start time in HH:MM" },
+        time_end: { type: "string", description: "Arrival / end time in HH:MM" },
+        ...SHARED_FIELDS,
+      },
+      required: ["type", "name"],
+    },
+  },
+  // ── Bookings management ───────────────────────────────────────────────────
   {
     name: "list_bookings",
     description: "List all bookings in Peter's China Trip 2026 tracker",
@@ -60,9 +120,7 @@ const TOOLS = [
     description: "Mark a specific booking as settled — i.e. the other person has paid back their share",
     inputSchema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The UUID of the booking to mark as settled" },
-      },
+      properties: { id: { type: "string", description: "The UUID of the booking to mark as settled" } },
       required: ["id"],
     },
   },
@@ -71,9 +129,7 @@ const TOOLS = [
     description: "Delete a booking by its ID",
     inputSchema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The UUID of the booking to delete" },
-      },
+      properties: { id: { type: "string", description: "The UUID of the booking to delete" } },
       required: ["id"],
     },
   },
@@ -90,6 +146,7 @@ const TOOLS = [
       required: ["id", "pass_code"],
     },
   },
+  // ── Todos ─────────────────────────────────────────────────────────────────
   {
     name: "add_todo",
     description: "Add a todo item to the China trip checklist. Use assignee='both' to create one task per person.",
@@ -119,9 +176,7 @@ const TOOLS = [
     description: "Mark a todo item as done",
     inputSchema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The UUID of the todo to mark as done" },
-      },
+      properties: { id: { type: "string", description: "The UUID of the todo to mark as done" } },
       required: ["id"],
     },
   },
@@ -130,31 +185,113 @@ const TOOLS = [
     description: "Delete a todo item by ID",
     inputSchema: {
       type: "object",
-      properties: {
-        id: { type: "string", description: "The UUID of the todo to delete" },
-      },
+      properties: { id: { type: "string", description: "The UUID of the todo to delete" } },
       required: ["id"],
     },
   },
 ];
+
+// ── Tool implementations ───────────────────────────────────────────────────
+
+async function add_transport(args) {
+  const { type, origin, destination, date, departs, arrives, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const name = `${origin} → ${destination}`;
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      type,
+      name,
+      origin:    origin      || null,
+      location:  destination || null,
+      date:      date        || null,
+      time:      departs     || null,
+      time_end:  arrives     || null,
+      price:     price       ?? null,
+      currency:  currency    || "USD",
+      platform:  platform    || null,
+      reference: reference   || null,
+      notes:     notes       || null,
+      travelers: travelers   || "both",
+      paid_by:   paid_by     || null,
+      segment_id: null,
+    })
+    .select().single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"} · ${data.time ?? ""}${data.time_end ? ` → ${data.time_end}` : ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"} (id: ${data.id})` }] };
+}
+
+async function add_accommodation(args) {
+  const { name, location, check_in, check_out, check_in_time, check_out_time, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const segment_id = await getOrCreateSegment("hotel", location);
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      type:      "hotel",
+      name:      name           || null,
+      location:  location       || null,
+      date:      check_in       || null,
+      date_end:  check_out      || null,
+      time:      check_in_time  || null,
+      time_end:  check_out_time || null,
+      price:     price          ?? null,
+      currency:  currency       || "USD",
+      platform:  platform       || null,
+      reference: reference      || null,
+      notes:     notes          || null,
+      travelers: travelers      || "both",
+      paid_by:   paid_by        || null,
+      segment_id,
+    })
+    .select().single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Added [hotel] ${data.name} · ${data.date ?? ""}${data.date_end ? ` → ${data.date_end}` : ""} · ${data.location} · ${data.price != null ? `${data.price} ${data.currency}` : "—"} (id: ${data.id})` }] };
+}
+
+async function add_experience(args) {
+  const { type, name, date, time, location, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const segment_id = await getOrCreateSegment(type, location);
+  const { data, error } = await supabase
+    .from("bookings")
+    .insert({
+      type,
+      name:      name      || null,
+      date:      date      || null,
+      time:      time      || null,
+      location:  location  || null,
+      price:     price     ?? null,
+      currency:  currency  || "USD",
+      platform:  platform  || null,
+      reference: reference || null,
+      notes:     notes     || null,
+      travelers: travelers || "both",
+      paid_by:   paid_by   || null,
+      segment_id,
+    })
+    .select().single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"}${data.time ? ` at ${data.time}` : ""} · ${data.location ?? ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"} (id: ${data.id})` }] };
+}
 
 async function add_booking(args) {
   const segment_id = await getOrCreateSegment(args.type, args.location);
   const { data, error } = await supabase
     .from("bookings")
     .insert({
-      type: args.type,
-      name: args.name,
-      date: args.date ?? null,
-      date_end: args.date_end ?? null,
-      location: args.location ?? null,
-      price: args.price ?? null,
-      currency: args.currency ?? "USD",
-      platform: args.platform ?? null,
+      type:      args.type,
+      name:      args.name,
+      date:      args.date      ?? null,
+      date_end:  args.date_end  ?? null,
+      location:  args.location  ?? null,
+      origin:    args.origin    ?? null,
+      time:      args.time      ?? null,
+      time_end:  args.time_end  ?? null,
+      price:     args.price     ?? null,
+      currency:  args.currency  ?? "USD",
+      platform:  args.platform  ?? null,
       reference: args.reference ?? null,
-      notes: args.notes ?? null,
+      notes:     args.notes     ?? null,
       travelers: args.travelers ?? "both",
-      paid_by: args.paid_by ?? null,
+      paid_by:   args.paid_by   ?? null,
       segment_id,
     })
     .select().single();
@@ -172,9 +309,11 @@ async function list_bookings(args) {
     `[${b.type.toUpperCase()}] ${b.name}` +
     (b.date ? ` · ${b.date}` : "") +
     (b.date_end ? ` → ${b.date_end}` : "") +
+    (b.time ? ` · ${b.time}${b.time_end ? ` → ${b.time_end}` : ""}` : "") +
     (b.location ? ` · ${b.location}` : "") +
     (b.price != null ? ` · ${b.price} ${b.currency}` : "") +
     (b.reference ? ` · ${b.reference}` : "") +
+    (b.paid_by ? ` · paid by ${b.paid_by}` : " · unpaid") +
     (b.travelers !== "both" ? ` · ${b.travelers} only` : "") +
     (b.pass_code ? ` · 🎫 ${b.pass_format}` : "") +
     ` (id: ${b.id})`
@@ -197,11 +336,7 @@ async function delete_booking(args) {
 async function set_pass(args) {
   const { id, pass_code, pass_format = "QR_CODE" } = args;
   const { data, error } = await supabase
-    .from("bookings")
-    .update({ pass_code, pass_format })
-    .eq("id", id)
-    .select("name")
-    .single();
+    .from("bookings").update({ pass_code, pass_format }).eq("id", id).select("name").single();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   return { content: [{ type: "text", text: `✓ Pass set for "${data.name}" (${pass_format})` }] };
 }
@@ -209,11 +344,7 @@ async function set_pass(args) {
 async function add_todo(args) {
   const assignees = args.assignee === "both" ? ["peter", "friend"] : [args.assignee ?? "peter"];
   const rows = assignees.map(assignee => ({
-    title:    args.title,
-    category: args.category ?? "do",
-    assignee,
-    deadline: args.deadline ?? null,
-    done:     false,
+    title: args.title, category: args.category ?? "do", assignee, deadline: args.deadline ?? null, done: false,
   }));
   const { data, error } = await supabase.from("todos").insert(rows).select();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
@@ -249,39 +380,39 @@ async function delete_todo(args) {
   return { content: [{ type: "text", text: `✓ Todo ${args.id} deleted.` }] };
 }
 
+// ── Handler ────────────────────────────────────────────────────────────────
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "1.3.0" });
+  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "2.0.0" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   let body;
   try { body = typeof req.body === "string" ? JSON.parse(req.body) : req.body; }
   catch { return res.status(400).json({ error: "Invalid JSON" }); }
 
-  const { jsonrpc, id, method, params } = body;
+  const { id, method, params } = body;
 
   if (method === "initialize") {
-    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "1.3.0" } } });
+    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "2.0.0" } } });
   }
   if (method === "tools/list") {
     return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
   }
   if (method === "tools/call") {
     const { name, arguments: args } = params;
-    let result;
-    if (name === "add_booking") result = await add_booking(args);
-    else if (name === "list_bookings") result = await list_bookings(args);
-    else if (name === "settle_booking") result = await settle_booking(args);
-    else if (name === "delete_booking") result = await delete_booking(args);
-    else if (name === "set_pass") result = await set_pass(args);
-    else if (name === "add_todo") result = await add_todo(args);
-    else if (name === "list_todos") result = await list_todos(args);
-    else if (name === "complete_todo") result = await complete_todo(args);
-    else if (name === "delete_todo") result = await delete_todo(args);
-    else result = { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
+    const handlers = {
+      add_transport, add_accommodation, add_experience,
+      add_booking, list_bookings, settle_booking, delete_booking, set_pass,
+      add_todo, list_todos, complete_todo, delete_todo,
+    };
+    const fn = handlers[name];
+    const result = fn
+      ? await fn(args)
+      : { isError: true, content: [{ type: "text", text: `Unknown tool: ${name}` }] };
     return res.json({ jsonrpc: "2.0", id, result });
   }
 
