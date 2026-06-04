@@ -215,7 +215,7 @@ async function getExistingBooking(id) {
 
 async function applyInsert(kind, body = {}) {
   const payload = buildPayload(kind, body, {}, { forInsert: true });
-  const segment_id = await getOrCreateSegment(payload.type, payload.location);
+  const segment_id = await getOrCreateSegment(payload.type, payload.location, payload.date ?? null);
   const insertPayload = { ...payload, segment_id };
 
   const { data, error } = await supabase
@@ -232,7 +232,7 @@ async function applyInsert(kind, body = {}) {
 async function applyUpdate(kind, id, body = {}) {
   const existing = await getExistingBooking(id);
   const payload = buildPayload(kind, body, existing, { forInsert: false });
-  const segment_id = await getOrCreateSegment(payload.type, payload.location);
+  const segment_id = await getOrCreateSegment(payload.type, payload.location, payload.date ?? null);
   const updatePayload = { ...payload, segment_id };
 
   // Intentional partial-update semantics: if settled is not provided in the request body,
