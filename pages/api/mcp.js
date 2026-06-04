@@ -8,11 +8,13 @@ const supabase = createClient(
 
 const TRANSIT_TYPES = ["flight", "train"];
 
-async function getOrCreateSegment(type, location) {
-  if (!location?.trim() || TRANSIT_TYPES.includes(type)) return null;
-  const loc = location.trim();
-  const { data: existing } = await supabase.from("segments").select("id").eq("location", loc).single();
-  if (existing) return existing.id;
+function _offsetDate(dateStr, days) {
+  const d = new Date(dateStr + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+async function _createNewSegment(loc) {
   const { count } = await supabase.from("segments").select("*", { count: "exact", head: true });
   const { data: created, error } = await supabase
     .from("segments")
@@ -20,6 +22,35 @@ async function getOrCreateSegment(type, location) {
     .select("id").single();
   if (error) { console.error("getOrCreateSegment:", error.message); return null; }
   return created.id;
+}
+
+async function getOrCreateSegment(type, location, bookingDate = null) {
+  if (!location?.trim() || TRANSIT_TYPES.includes(type)) return null;
+  const loc = location.trim();
+
+  const { data: existing } = await supabase
+    .from("segments").select("id").eq("location", loc).order("sort_order", { ascending: true });
+
+  if (!existing?.length) return _createNewSegment(loc);
+  if (!bookingDate) return existing[0].id;
+
+  for (const seg of existing) {
+    const { data: segBookings } = await supabase
+      .from("bookings").select("date, date_end")
+      .eq("segment_id", seg.id).not("date", "is", null);
+
+    if (!segBookings?.length) return seg.id;
+
+    const allDates = segBookings.flatMap(b => [b.date, b.date_end].filter(Boolean));
+    const segMin = allDates.reduce((a, b) => (a < b ? a : b));
+    const segMax = allDates.reduce((a, b) => (a > b ? a : b));
+
+    if (bookingDate >= _offsetDate(segMin, -1) && bookingDate <= _offsetDate(segMax, 1)) {
+      return seg.id;
+    }
+  }
+
+  return _createNewSegment(loc);
 }
 
 const SHARED_FIELDS = {
@@ -222,7 +253,7 @@ async function add_transport(args) {
 
 async function add_accommodation(args) {
   const { name, location, check_in, check_out, check_in_time, check_out_time, price, currency, platform, reference, notes, travelers, paid_by } = args;
-  const segment_id = await getOrCreateSegment("hotel", location);
+  const segment_id = await getOrCreateSegment("hotel", location, check_in ?? null);
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -249,7 +280,7 @@ async function add_accommodation(args) {
 
 async function add_experience(args) {
   const { type, name, date, time, location, price, currency, platform, reference, notes, travelers, paid_by } = args;
-  const segment_id = await getOrCreateSegment(type, location);
+  const segment_id = await getOrCreateSegment(type, location, date ?? null);
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -273,7 +304,7 @@ async function add_experience(args) {
 }
 
 async function add_booking(args) {
-  const segment_id = await getOrCreateSegment(args.type, args.location);
+  const segment_id = await getOrCreateSegment(args.type, args.location, args.date ?? null);
   const { data, error } = await supabase
     .from("bookings")
     .insert({
