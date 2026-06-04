@@ -1,14 +1,6 @@
 // pages/api/segments/[id].js
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
-
-function isAuthorized(req) {
-  return req.headers.authorization === `Bearer ${process.env.WRITE_PASSWORD}`;
-}
+import { supabase } from "../lib/db.js";
+import { isAuthorized } from "../lib/auth.js";
 
 export default async function handler(req, res) {
   const { id } = req.query;

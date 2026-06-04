@@ -1,15 +1,8 @@
 // pages/api/lib/segments.js
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "./db.js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
+export const TRANSIT_TYPES = ["flight", "train"];
 
-const TRANSIT_TYPES = ["flight", "train"];
-
-// Looks up a segment by location name, creates it if it doesn't exist.
-// Returns null for transit bookings or bookings with no location.
 export async function getOrCreateSegment(type, location) {
   if (!location?.trim() || TRANSIT_TYPES.includes(type)) return null;
   const loc = location.trim();
@@ -32,6 +25,10 @@ export async function getOrCreateSegment(type, location) {
     .select("id")
     .single();
 
-  if (error) { console.error("getOrCreateSegment:", error.message); return null; }
+  if (error) {
+    console.error("getOrCreateSegment:", error.message);
+    return null;
+  }
+
   return created.id;
 }

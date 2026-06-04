@@ -115,6 +115,8 @@ export default function App() {
   const [showFilters, setShowFilters] = useState(true);
   const [rates, setRates] = useState(null);
   const [ratesLoading, setRatesLoading] = useState(false);
+  const [summary, setSummary] = useState(null);
+  const [summaryLoading, setSummaryLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState({});
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [segments, setSegments] = useState([]);
@@ -417,6 +419,7 @@ export default function App() {
     setSaving(true);
     const payload = {
       ...form,
+      identity,
       price: form.price ? parseFloat(form.price) : null,
       date: form.date || null,
       date_end: form.date_end || null,
@@ -427,42 +430,17 @@ export default function App() {
       origin: form.origin || null,
     };
     const base = apiBase(form.type);
-    if (editId) {
-      const r = await fetch(`${base}/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
-      if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
-      // Auto-complete linked todos when booking transitions from unpaid → paid
-      const prev = bookings.find(b => b.id === editId);
-      if (!prev?.paid_by && payload.paid_by) {
-        const linked = todos.filter(t => t.booking_id === editId && !t.done);
-        await Promise.all(linked.map(t =>
-          fetch(`/api/todos/${t.id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ done: true }) })
-        ));
-        if (linked.length) await fetchTodos();
-      }
-    } else {
-      const r = await fetch(base, { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
-      if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
-      const newBooking = await r.json();
-      // Create linked reminder todo(s)
-      if (form.reminder && newBooking?.id) {
-        const todoTitle = form.reminderType === "prepare" ? `Prepare: ${form.name}` : `Buy: ${form.name}`;
-        const todoCategory = form.reminderType === "prepare" ? "pack" : "book";
-        const assignees = form.reminderAssignee === "both" ? ["peter", "friend"] : [identity || "peter"];
-        await Promise.all(assignees.map(assignee =>
-          fetch("/api/todos", {
-            method: "POST", headers: authedHeaders,
-            body: JSON.stringify({
-              title: todoTitle, category: todoCategory, assignee,
-              booking_id: newBooking.id,
-              segment_id: newBooking.segment_id || null,
-              deadline: form.date || null,
-            }),
-          })
-        ));
-        await fetchTodos();
-      }
+    const method = editId ? "PUT" : "POST";
+    const url = editId ? `${base}/${editId}` : base;
+    const r = await fetch(url, { method, headers: authedHeaders, body: JSON.stringify(payload) });
+    if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      showToast(err.error || "Save failed", false);
+      setSaving(false);
+      return;
     }
-    await fetchBookings();
+    await Promise.all([fetchBookings(), fetchTodos()]);
     showToast(editId ? "Booking updated" : "Booking added");
     setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
   }
@@ -523,7 +501,28 @@ export default function App() {
     } catch {} finally { setRatesLoading(false); }
   }
 
-  useEffect(() => { if (showSummary) fetchRates(); }, [showSummary]);
+  async function fetchSummary() {
+    setSummaryLoading(true);
+    try {
+      const res = await fetch("/api/summary");
+      const data = await res.json();
+      if (res.ok) setSummary(data);
+    } catch {} finally { setSummaryLoading(false); }
+  }
+
+  useEffect(() => {
+    // Fetch rates and summary when the summary panel first opens
+    if (showSummary) {
+      fetchRates();
+      fetchSummary();
+    }
+  }, [showSummary]);
+
+  useEffect(() => {
+    // Re-fetch summary when bookings change and the panel is already open,
+    // so totals stay current after any create/update/delete.
+    if (showSummary) fetchSummary();
+  }, [bookings]);
 
   // Fetch Unsplash vibe image for each location when trip tab opens
   useEffect(() => {
@@ -552,23 +551,7 @@ export default function App() {
     .filter(b => filterTravelers === "all" || b.travelers === filterTravelers)
     .filter(b => filterPaidBy === "all" || (filterPaidBy === "pending" ? !b.paid_by : b.paid_by === filterPaidBy));
 
-  const activeCurrencies = [...new Set(
-    bookings.filter(b => b.price && b.currency && EXPENSE_TYPES.includes(b.type)).map(b => b.currency)
-  )].sort();
-
-  function calcForCurrency(currency) {
-    const bks = bookings.filter(b => b.currency === currency && b.price && EXPENSE_TYPES.includes(b.type));
-    const paid = bks.filter(b => b.paid_by);
-    const pending = bks.filter(b => !b.paid_by);
-    const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pendingTotal = pending.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pOwes = paid.filter(b => !b.settled).reduce((s, b) => {
-      const fronted = b.paid_by === "peter" ? parseFloat(b.price) : 0;
-      return s + peterShare(b) - fronted;
-    }, 0);
-    const settledCount = paid.filter(b => b.settled).length;
-    return { total, pendingTotal, pOwes, count: bks.length, pendingCount: pending.length, settledCount };
-  }
+  const summaryCurrencies = summary?.currencies || [];
 
   // Trip tab helpers
   const today = toDateStr(new Date());
@@ -1703,10 +1686,11 @@ export default function App() {
                   <button className="btn" onClick={() => setShowSummary(false)} style={{ background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 18, padding: "0 4px" }}>✕</button>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                  {activeCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>}
-                  {activeCurrencies.length > 0 && (() => {
-                    const owedByCurrency = activeCurrencies
-                      .map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes }))
+                  {(summaryLoading && summaryCurrencies.length === 0) && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>Loading summary…</div>}
+                  {!summaryLoading && summaryCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>}
+                  {summaryCurrencies.length > 0 && (() => {
+                    const owedByCurrency = summaryCurrencies
+                      .map(({ currency, pOwes }) => ({ currency, pOwes }))
                       .filter(x => Math.abs(x.pOwes) >= 0.01);
                     const toDKK = (amount, currency) => {
                       if (currency === "DKK") return amount;
@@ -1731,7 +1715,6 @@ export default function App() {
                               const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                               const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
                               const dkk = toDKK(pOwes, currency);
-                              // Personalize label: pOwes > 0 means Peter owes friend
                               const debtLabel = pOwes > 0
                                 ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
                                 : (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`);
@@ -1769,10 +1752,9 @@ export default function App() {
                       </div>
                     );
                   })()}
-                  {activeCurrencies.map(currency => {
-                    const { total, pendingTotal, pOwes, count, pendingCount, settledCount } = calcForCurrency(currency);
+                  {summaryCurrencies.map(({ currency, total, pendingTotal, count, pendingCount, settledCount, byCategory }) => {
                     const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
-                    const fmt2 = v => `${sym}${v.toFixed(2)} ${sym ? "" : currency}`.trim();
+                    const fmt2 = v => `${sym}${Number(v || 0).toFixed(2)} ${sym ? "" : currency}`.trim();
                     return (
                       <div key={currency} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                         <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.12em" }}>─ {currency} ──────────────────────────</div>
@@ -1781,8 +1763,8 @@ export default function App() {
                         <div style={{ background: "var(--surface2)", borderRadius: 8, padding: 20, border: "1px solid var(--border)" }}>
                           <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12 }}>By category</div>
                           {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                            const catTotal = bookings.filter(b => b.currency === currency && b.price && b.type === t.id).reduce((s, b) => s + parseFloat(b.price), 0);
-                            if (catTotal === 0) return null;
+                            const catTotal = byCategory?.[t.id] || 0;
+                            if (!catTotal) return null;
                             return (
                               <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
                                 <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace" }}>{t.icon} {t.label}</span>
