@@ -24,7 +24,11 @@ pages/
   api/
     mcp.js                  — MCP server (JSON-RPC)
     lib/
+      auth.js               — shared write auth helper
+      db.js                 — shared Supabase client
+      bookings.js           — shared booking normalization
       segments.js           — shared getOrCreateSegment helper
+      summary.js            — shared summary aggregation
     bookings/
       index.js              — GET list, POST create
       [id].js               — PUT update, PATCH partial, DELETE
@@ -109,6 +113,7 @@ All write routes require `Authorization: Bearer <WRITE_PASSWORD>`. GET routes ar
 | POST | `/api/todos` | Create todo |
 | PATCH | `/api/todos/[id]` | Update todo |
 | DELETE | `/api/todos/[id]` | Delete |
+| GET | `/api/summary` | Settlement snapshot for the UI |
 | POST | `/api/mcp` | MCP JSON-RPC endpoint |
 
 ---
@@ -178,6 +183,13 @@ Requires `.env.local` with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`. Safe to re
 - **Todos** — per-person visibility, inline editing, deadlines with overdue badges, optimistic creation; "do" and "book" todos can be pinned to a segment and appear under that city in the Trip tab
 - **Auto-todos** — computed suggestions (never stored): missing hotels, missing transport between cities, missing QR codes
 - **Pass viewer** — full-screen QR / barcode renderer for offline boarding pass access
-- **Summary tab** — per-currency totals, settlement calculation, by-category breakdown
+- **Summary tab** — server-side settlement snapshot, per-currency totals, by-category breakdown
 - **Filters** — travelers, paid-by, status, type (multi-select); persisted to localStorage
 - **Auth** — 🔒 button → password → stored as `wt` in localStorage; 401 shows toast
+
+
+## Booking automation
+
+Booking creation and booking edits now handle linked reminder todos on the server:
+- creating a booking with `reminder` on creates the todo(s)
+- changing a booking from unpaid to paid marks linked todos done
