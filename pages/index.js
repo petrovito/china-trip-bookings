@@ -18,7 +18,6 @@ const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
   time: "", time_end: "", origin: "",
-  map_query: "", map_provider: "amap", map_lat: "", map_lng: "", map_place_id: "",
   reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
@@ -93,58 +92,6 @@ function fmtDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-}
-
-function hasCjk(text = "") {
-  return /[㐀-鿿぀-ヿ가-힯]/.test(text);
-}
-
-function deriveMapQuery(b = {}) {
-  const explicit = (b.map_query || "").trim();
-  if (explicit) return explicit;
-  const name = (b.name || "").trim();
-  const location = (b.location || "").trim();
-  const origin = (b.origin || "").trim();
-
-  if (b.type === "flight") {
-    const city = location ? `${location} ` : "";
-    return origin ? `${origin} airport` : `${city}airport`.trim();
-  }
-  if (b.type === "train") {
-    const city = location ? `${location} ` : "";
-    return origin ? `${origin} railway station` : `${city}railway station`.trim();
-  }
-  if (name && location) return `${name}, ${location}`;
-  return name || location || "";
-}
-
-function resolveMapProvider(b = {}) {
-  const provider = (b.map_provider || "amap").toLowerCase();
-  if (provider === "google" || provider === "amap") return provider;
-  const query = `${b.map_query || ""} ${b.name || ""} ${b.location || ""} ${b.origin || ""}`;
-  return hasCjk(query) ? "amap" : "google";
-}
-
-function mapsLink(b) {
-  const provider = resolveMapProvider(b);
-  const query = deriveMapQuery(b);
-  const lat = b.map_lat ?? b.lat;
-  const lng = b.map_lng ?? b.lng;
-
-  if (provider === "google") {
-    const googleQuery = lat != null && lng != null && lat !== "" && lng !== ""
-      ? `${lat},${lng}`
-      : query || b.name || b.location || b.origin || "China";
-    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(googleQuery)}`;
-  }
-
-  if (lat != null && lng != null && lat !== "" && lng !== "") {
-    const label = query || b.name || b.location || "Location";
-    return `https://uri.amap.com/marker?position=${encodeURIComponent(`${lng},${lat}`)}&name=${encodeURIComponent(label)}&src=tripbookings&coordinate=gaode&callnative=0`;
-  }
-
-  const amapQuery = query || b.name || b.location || b.origin || "China";
-  return `https://uri.amap.com/search?keyword=${encodeURIComponent(amapQuery)}&src=tripbookings&callnative=0`;
 }
 
 export default function App() {
@@ -478,11 +425,6 @@ export default function App() {
       time: form.time || null,
       time_end: form.time_end || null,
       origin: form.origin || null,
-      map_query: (form.map_query || deriveMapQuery(form) || null),
-      map_provider: form.map_provider || "amap",
-      map_lat: form.map_lat || null,
-      map_lng: form.map_lng || null,
-      map_place_id: form.map_place_id || null,
     };
     const base = apiBase(form.type);
     if (editId) {
@@ -543,10 +485,6 @@ export default function App() {
       platform: b.platform || "", reference: b.reference || "", notes: b.notes || "",
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
       time: b.time || "", time_end: b.time_end || "", origin,
-      map_query: b.map_query || deriveMapQuery(b), map_provider: b.map_provider || "amap",
-      map_lat: b.map_lat != null ? String(b.map_lat) : "",
-      map_lng: b.map_lng != null ? String(b.map_lng) : "",
-      map_place_id: b.map_place_id || "",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -705,6 +643,67 @@ export default function App() {
     return null;
   }
 
+  function mapSearchText(b) {
+    if (b.type === "flight") {
+      return b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name;
+    }
+    if (b.type === "train") {
+      return b.origin ? `${b.origin} railway station` : b.location ? `${b.location} railway station China` : b.name;
+    }
+    return b.location ? `${b.name}, ${b.location}, China` : `${b.name}, China`;
+  }
+
+  function mapTargets(b) {
+    const query = mapSearchText(b);
+    const encodedQuery = encodeURIComponent(query);
+    const name = encodeURIComponent(b.name || query);
+    const lat = b.map_lat ?? b.lat;
+    const lng = b.map_lng ?? b.lng;
+    const hasCoords = lat !== null && lat !== undefined && lng !== null && lng !== undefined && lat !== "" && lng !== "";
+
+    const appUrl = hasCoords
+      ? `androidamap://viewMap?sourceApplication=tripbookings&poiname=${name}&lat=${lat}&lon=${lng}&dev=1`
+      : `androidamap://poi?sourceApplication=tripbookings&keywords=${encodedQuery}&dev=0`;
+
+    const webUrl = hasCoords
+      ? `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}&src=tripbookings`
+      : `https://uri.amap.com/search?keyword=${encodedQuery}&src=tripbookings`;
+
+    return { appUrl, webUrl };
+  }
+
+  function mapsLink(b) {
+    return mapTargets(b).webUrl;
+  }
+
+  function openMapsLink(e, b) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof window === "undefined") return;
+
+    const { appUrl, webUrl } = mapTargets(b);
+    let fallbackTimer = null;
+    let cleanedUp = false;
+
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) cleanup();
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    fallbackTimer = setTimeout(() => {
+      cleanup();
+      window.location.href = webUrl;
+    }, 800);
+
+    window.location.href = appUrl;
+  }
 
   const showDateEnd = form.type === "hotel" || form.type === "activity" || form.type === "ticket";
 
@@ -844,13 +843,6 @@ export default function App() {
                   </div>
                 )}
                 <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
-                <div style={{ display: "flex", gap: 6 }}>
-                  <input placeholder="Map search keyword (optional)" value={form.map_query} onChange={e => setForm(f => ({ ...f, map_query: e.target.value }))} style={{ ...inp, flex: 1 }} />
-                  <select value={form.map_provider} onChange={e => setForm(f => ({ ...f, map_provider: e.target.value }))} style={{ ...inp, width: 110, flexShrink: 0 }}>
-                    <option value="amap">Amap</option>
-                    <option value="google">Google</option>
-                  </select>
-                </div>
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
                 {(form.type === "flight" || form.type === "train") && (
                   <div style={{ gridColumn: "1 / -1" }}>
@@ -1390,7 +1382,7 @@ export default function App() {
                                 {b.platform && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
                                 {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
                                 <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-                                  <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>📍 maps</a>
+                                  <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => openMapsLink(e, b)}>📍 maps</a>
                                   {platformLink(b) && <a href={platformLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>↗ {b.platform}</a>}
                                   {canWrite && PASS_TYPES.includes(b.type) && (
                                     <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
@@ -1476,7 +1468,7 @@ export default function App() {
                                   )}
                                   <a href={mapsLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
                                     style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
-                                    onClick={e => e.stopPropagation()}>map ↗</a>
+                                    onClick={e => openMapsLink(e, hotelBooking)}>map ↗</a>
                                   {platformLink(hotelBooking) && (
                                     <a href={platformLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
                                       style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
@@ -1590,7 +1582,7 @@ export default function App() {
                                             <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
                                               <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
                                                 style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
-                                                onClick={e => e.stopPropagation()}>📍 maps</a>
+                                                onClick={e => openMapsLink(e, b)}>📍 maps</a>
                                               {platformLink(b) && (
                                                 <a href={platformLink(b)} target="_blank" rel="noopener noreferrer"
                                                   style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
