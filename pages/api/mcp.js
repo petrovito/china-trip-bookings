@@ -177,6 +177,60 @@ const TOOLS = [
       required: ["id", "pass_code"],
     },
   },
+  // ── Segment management ───────────────────────────────────────────────────
+  {
+    name: "list_segments",
+    description: "List all trip segments (city stays) with IDs, sort order, and booking counts. Highlights empty segments.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "create_segment",
+    description: "Manually create a new trip segment (city stay). Useful when a city visit has no auto-created segment yet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        location:   { type: "string", description: "City name, e.g. 'Kunming'" },
+        sort_order: { type: "number", description: "Position in the timeline — omit to append at the end" },
+      },
+      required: ["location"],
+    },
+  },
+  {
+    name: "update_segment",
+    description: "Rename a segment or change its sort order (position in the trip timeline).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:         { type: "string", description: "UUID of the segment to update" },
+        location:   { type: "string", description: "New city name" },
+        sort_order: { type: "number", description: "New position in the timeline" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "delete_segment",
+    description: "Delete an empty segment. Fails if any bookings are still assigned to it — use assign_segment first to move them.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "UUID of the segment to delete" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "assign_segment",
+    description: "Directly assign (or reassign) a booking to a segment. Use this to fix misassigned bookings without deleting and re-adding them. Pass segment_id=null to unassign.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        booking_id: { type: "string", description: "UUID of the booking to reassign" },
+        segment_id: { type: "string", description: "UUID of the target segment, or null to unassign" },
+      },
+      required: ["booking_id"],
+    },
+  },
   // ── Todos ─────────────────────────────────────────────────────────────────
   {
     name: "add_todo",
@@ -347,6 +401,7 @@ async function list_bookings(args) {
     (b.paid_by ? ` · paid by ${b.paid_by}` : " · unpaid") +
     (b.travelers !== "both" ? ` · ${b.travelers} only` : "") +
     (b.pass_code ? ` · 🎫 ${b.pass_format}` : "") +
+    (b.segment_id ? ` · seg:${b.segment_id}` : " · seg:none") +
     ` (id: ${b.id})`
   );
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${lines.join("\n")}` }] };
@@ -411,6 +466,70 @@ async function delete_todo(args) {
   return { content: [{ type: "text", text: `✓ Todo ${args.id} deleted.` }] };
 }
 
+
+async function list_segments() {
+  const { data: segs, error } = await supabase
+    .from("segments").select("*").order("sort_order", { ascending: true });
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  if (!segs?.length) return { content: [{ type: "text", text: "No segments found." }] };
+
+  const { data: bkgs } = await supabase.from("bookings").select("segment_id").not("segment_id", "is", null);
+  const countMap = {};
+  for (const b of bkgs ?? []) countMap[b.segment_id] = (countMap[b.segment_id] ?? 0) + 1;
+
+  const lines = segs.map(s => {
+    const n = countMap[s.id] ?? 0;
+    return `[SEG] ${s.location} · sort:${s.sort_order} · ${n} booking${n !== 1 ? "s" : ""}${n === 0 ? " ⚠️ EMPTY" : ""} (id: ${s.id})`;
+  });
+  return { content: [{ type: "text", text: `${segs.length} segment(s):\n\n${lines.join("\n")}` }] };
+}
+
+async function create_segment(args) {
+  const { location, sort_order } = args;
+  let order = sort_order;
+  if (!order) {
+    const { count } = await supabase.from("segments").select("*", { count: "exact", head: true });
+    order = (count ?? 0) + 1;
+  }
+  const { data, error } = await supabase
+    .from("segments").insert({ location: location.trim(), sort_order: order }).select().single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Created segment [${data.location}] · sort:${data.sort_order} (id: ${data.id})` }] };
+}
+
+async function update_segment(args) {
+  const { id, location, sort_order } = args;
+  const updates = {};
+  if (location  !== undefined) updates.location   = location.trim();
+  if (sort_order !== undefined) updates.sort_order = sort_order;
+  if (!Object.keys(updates).length)
+    return { isError: true, content: [{ type: "text", text: "Nothing to update — provide location and/or sort_order." }] };
+  const { data, error } = await supabase
+    .from("segments").update(updates).eq("id", id).select().single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Segment updated: [${data.location}] · sort:${data.sort_order} (id: ${data.id})` }] };
+}
+
+async function delete_segment(args) {
+  const { count } = await supabase
+    .from("bookings").select("*", { count: "exact", head: true }).eq("segment_id", args.id);
+  if (count > 0)
+    return { isError: true, content: [{ type: "text", text: `Cannot delete: ${count} booking(s) still assigned to this segment. Use assign_segment to move them first.` }] };
+  const { error } = await supabase.from("segments").delete().eq("id", args.id);
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  return { content: [{ type: "text", text: `✓ Segment ${args.id} deleted.` }] };
+}
+
+async function assign_segment(args) {
+  const { booking_id, segment_id = null } = args;
+  const { data, error } = await supabase
+    .from("bookings").update({ segment_id }).eq("id", booking_id)
+    .select("name, type, date, segment_id").single();
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  const dest = data.segment_id ? `segment ${data.segment_id}` : "no segment (unassigned)";
+  return { content: [{ type: "text", text: `✓ "${data.name}" (${data.type} · ${data.date ?? "—"}) → ${dest}` }] };
+}
+
 // ── Handler ────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
@@ -438,6 +557,7 @@ export default async function handler(req, res) {
     const handlers = {
       add_transport, add_accommodation, add_experience,
       add_booking, list_bookings, settle_booking, delete_booking, set_pass,
+      list_segments, create_segment, update_segment, delete_segment, assign_segment,
       add_todo, list_todos, complete_todo, delete_todo,
     };
     const fn = handlers[name];
