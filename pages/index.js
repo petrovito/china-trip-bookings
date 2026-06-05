@@ -1419,35 +1419,39 @@ export default function App() {
                     const vibeImg = locationImages[segment.location];
 
                     return (
-                      <div key={segment.id} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1 }}>
-                        {/* Location hero header */}
+                      <div key={segment.id} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1, background: "var(--surface2)", border: `2px solid ${isActive ? "rgba(14,165,233,0.35)" : "var(--border2)"}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 20px rgba(0,0,0,0.07)" }}>
+                        {/* Segment header */}
                         <div
                           onClick={() => toggleGroup(segment.id)}
-                          style={{ position: "relative", borderRadius: 10, overflow: "hidden", marginBottom: isCollapsed ? 0 : 16, cursor: "pointer", minHeight: 90, background: "var(--surface)", border: "1px solid var(--border)" }}
+                          style={{ position: "relative", overflow: "hidden", cursor: "pointer", minHeight: 88, borderBottom: isCollapsed ? "none" : "1px solid var(--border)" }}
                         >
                           {vibeImg && (
                             <div className="hero-img" style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center" }} />
                           )}
                           <div style={{ position: "absolute", inset: 0, background: "var(--hero-overlay)" }} />
-                          <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, display: "inline-block", boxShadow: "0 0 8px #0ea5e9" }} />}
+                          <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              {isActive && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)", flexShrink: 0, display: "inline-block", marginTop: 5, boxShadow: "0 0 8px #0ea5e9" }} />}
                               <div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, fontWeight: 600, color: isActive ? "var(--text)" : isPast ? "var(--text-faint)" : "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
+                                <div style={{ display: "inline-flex", alignItems: "center", background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.22)", borderRadius: 4, padding: "1px 8px", marginBottom: 7 }}>
+                                  <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase" }}>stop</span>
+                                </div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
                                   {segment.location}
                                 </div>
-                                <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 3 }}>
+                                <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 4, letterSpacing: "0.04em" }}>
                                   {fmtDateShort(segment.startDate)}{segment.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
                                   {isActive && " · now"}
                                 </div>
                               </div>
                             </div>
-                            <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{isCollapsed ? "▸" : "▾"}</span>
+                            <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", flexShrink: 0, marginTop: 3 }}>{isCollapsed ? "▸" : "▾"}</span>
                           </div>
                         </div>
 
                         {!isCollapsed && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                          <div style={{ position: "relative", padding: "14px 14px 14px 34px", display: "flex", flexDirection: "column", gap: 0 }}>
+                            <div style={{ position: "absolute", left: 16, top: 10, bottom: 10, width: 2, background: "var(--border)", borderRadius: 1 }} />
                             {/* Hotel banners */}
                             {hotelBookings.map(hotelBooking => (
                               <div key={hotelBooking.id} style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
