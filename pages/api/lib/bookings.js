@@ -71,7 +71,7 @@ function baseBookingFields(body = {}, existing = {}) {
 
 function transportName(body = {}, existing = {}) {
   const origin = toNull(pick(body.origin, existing.origin));
-  const location = toNull(pick(body.location, existing.location));
+  const location = toNull(pick(body.location, body.destination, existing.location));
   const explicit = pick(body.name, existing.name);
   if (origin && location) return `${origin} → ${location}`;
   return explicit || (origin || location ? `${origin || ""}${location ? ` → ${location}` : ""}` : null);
@@ -85,7 +85,9 @@ function buildTransportPayload(body = {}, existing = {}, { forInsert = false } =
 
   payload.name = transportName(body, existing);
   payload.origin = toNull(pick(body.origin, existing.origin));
-  payload.location = toNull(pick(body.location, existing.location));
+  payload.location = toNull(pick(body.location, body.destination, existing.location));
+  payload.time = toNull(pick(body.time, body.departs, existing.time));
+  payload.time_end = toNull(pick(body.time_end, body.arrives, existing.time_end));
   payload.settled = body.settled !== undefined ? body.settled : (forInsert ? false : undefined);
 
   return payload;

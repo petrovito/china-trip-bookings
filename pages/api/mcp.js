@@ -1,5 +1,6 @@
 // pages/api/mcp.js
 import { createClient } from "@supabase/supabase-js";
+import { updateBookingRecord } from "./lib/bookings.js";
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -161,6 +162,40 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: { id: { type: "string", description: "The UUID of the booking to delete" } },
+      required: ["id"],
+    },
+  },
+  {
+    name: "update_booking",
+    description: "Update an existing booking's fields. Supports flights, trains, hotels, tickets, food, and activities.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id:         { type: "string", description: "The UUID of the booking to update" },
+        type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"], description: "Optional new booking type" },
+        name:       { type: "string", description: "Booking name" },
+        date:       { type: "string", description: "Date in YYYY-MM-DD format" },
+        date_end:   { type: "string", description: "End date in YYYY-MM-DD format" },
+        time:       { type: "string", description: "Time in HH:MM format" },
+        time_end:   { type: "string", description: "End time in HH:MM format" },
+        origin:     { type: "string", description: "Departure city/airport" },
+        destination:{ type: "string", description: "Arrival city/destination" },
+        location:   { type: "string", description: "City, venue, or arrival destination" },
+        departs:    { type: "string", description: "Alias for time" },
+        arrives:    { type: "string", description: "Alias for time_end" },
+        check_in:   { type: "string", description: "Alias for hotel start date" },
+        check_out:  { type: "string", description: "Alias for hotel end date" },
+        check_in_time: { type: "string", description: "Alias for hotel start time" },
+        check_out_time:{ type: "string", description: "Alias for hotel end time" },
+        price:      { type: "number", description: "Price as a number" },
+        currency:   { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency" },
+        platform:   { type: "string", description: "Booking platform" },
+        reference:  { type: "string", description: "Booking reference or confirmation number" },
+        notes:      { type: "string", description: "Extra details" },
+        travelers:  { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for" },
+        paid_by:    { type: "string", enum: ["peter", "friend"], description: "Who paid" },
+        settled:    { type: "boolean", description: "Mark as settled or unsettled" },
+      },
       required: ["id"],
     },
   },
@@ -384,6 +419,23 @@ async function add_booking(args) {
   return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"}${data.date_end ? ` → ${data.date_end}` : ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}${data.location ? ` · ${data.location}` : ""}` }] };
 }
 
+async function update_booking(args) {
+  const { id, ...changes } = args || {};
+  if (!id) return { isError: true, content: [{ type: "text", text: "Error: Missing booking id" }] };
+
+  try {
+    const data = await updateBookingRecord("generic", id, changes);
+    return {
+      content: [{
+        type: "text",
+        text: `✓ Updated [${data.type}] ${data.name} · ${data.date ?? "—"}${data.date_end ? ` → ${data.date_end}` : ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}${data.location ? ` · ${data.location}` : ""} (id: ${data.id})`,
+      }],
+    };
+  } catch (error) {
+    return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  }
+}
+
 async function list_bookings(args) {
   let query = supabase.from("bookings").select("*").order("date", { ascending: true });
   if (args?.type && args.type !== "all") query = query.eq("type", args.type);
@@ -556,7 +608,7 @@ export default async function handler(req, res) {
     const { name, arguments: args } = params;
     const handlers = {
       add_transport, add_accommodation, add_experience,
-      add_booking, list_bookings, settle_booking, delete_booking, set_pass,
+      add_booking, list_bookings, settle_booking, delete_booking, update_booking, set_pass,
       list_segments, create_segment, update_segment, delete_segment, assign_segment,
       add_todo, list_todos, complete_todo, delete_todo,
     };
