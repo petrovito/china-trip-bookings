@@ -70,6 +70,11 @@ scripts/
 | `segment_id` | uuid | FK → segments |
 | `pass_code` | text | decoded QR / barcode value |
 | `pass_format` | text | `QR_CODE`, `PDF_417`, etc. |
+| `map_query` | text | address or search keyword for the 📍 maps button; a full street address is most reliable |
+| `map_lat` | numeric | latitude in **GCJ-02** (Amap) coordinates — not WGS-84/GPS |
+| `map_lng` | numeric | longitude in **GCJ-02** (Amap) coordinates — not WGS-84/GPS |
+| `map_provider` | text | `amap` (default) — reserved for future Google Maps toggle |
+| `map_place_id` | text | provider-specific place ID — stored, not yet used |
 | `created_at` | timestamptz | |
 
 ### `segments`
@@ -128,6 +133,7 @@ The MCP server talks directly to Supabase with the service key — it does not g
 |---|---|
 | `add_booking` | Add a booking; auto-creates segment from `location` |
 | `list_bookings` | List all bookings, optionally filtered by type |
+| `update_booking` | Patch any fields on an existing booking, including `map_query` / `map_lat` / `map_lng` |
 | `settle_booking` | Mark a booking as settled |
 | `delete_booking` | Delete a booking |
 | `set_pass` | Store a decoded QR / barcode for the pass viewer |
@@ -178,6 +184,9 @@ Requires `.env.local` with `SUPABASE_URL` and `SUPABASE_SERVICE_KEY`. Safe to re
 
 ## Frontend features
 
+- **Maps button** — every booking card with a `map_query`, `map_lat`, or `map_lng` shows a 📍 maps link. Tapping it tries to open the native Amap app (`androidamap://` deep link); if Amap isn't installed it falls back to `uri.amap.com` in the browser. Two resolution modes:
+  - **Exact pin** — when `map_lat` + `map_lng` are set (must be **GCJ-02**, not WGS-84/GPS — Google Maps coords are ~100–500 m off in China)
+  - **Search** — when only `map_query` is set; a full street address (preferably in Chinese) resolves reliably; a hotel name alone may return multiple results
 - **Identity system** — first-load picker saves `peter` or friend's name to localStorage; personalises all views
 - **Trip tab** — city segments pulled from DB, ordered by `sort_order`; transits interleaved by destination matching; Unsplash hero images per city
 - **Todos** — per-person visibility, inline editing, deadlines with overdue badges, optimistic creation; "do" and "book" todos can be pinned to a segment and appear under that city in the Trip tab

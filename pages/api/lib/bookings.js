@@ -66,6 +66,9 @@ function baseBookingFields(body = {}, existing = {}) {
     notes: toNull(pick(body.notes, existing.notes)),
     travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
+    map_query: toNull(pick(body.map_query, existing.map_query)),
+    map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
+    map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
   };
 }
 
@@ -109,6 +112,9 @@ function buildAccommodationPayload(body = {}, existing = {}, { forInsert = false
     notes: toNull(pick(body.notes, existing.notes)),
     travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
+    map_query: toNull(pick(body.map_query, existing.map_query)),
+    map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
+    map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
   };
 
   if (body.settled !== undefined) payload.settled = body.settled;
@@ -131,6 +137,9 @@ function buildExperiencePayload(body = {}, existing = {}, { forInsert = false } 
     notes: toNull(pick(body.notes, existing.notes)),
     travelers: pickNonEmpty(body.travelers, existing.travelers, DEFAULTS.travelers),
     paid_by: toNull(pick(body.paid_by, existing.paid_by)),
+    map_query: toNull(pick(body.map_query, existing.map_query)),
+    map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
+    map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
   };
 
   if (body.settled !== undefined) payload.settled = body.settled;
