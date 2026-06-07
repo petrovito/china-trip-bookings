@@ -1838,92 +1838,117 @@ export default function App() {
                   </div>
 
                   {/* Category breakdown */}
-                  {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                    const allCatBks = bookings.filter(b => b.type === t.id && b.price);
-                    if (allCatBks.length === 0) return null;
-
-                    // Group amounts by currency
-                    const byCur = {};
-                    allCatBks.forEach(b => {
-                      const cur = b.currency || "USD";
-                      if (!byCur[cur]) byCur[cur] = { total: 0, settled: 0, unsettled: 0 };
-                      const amt = parseFloat(b.price);
-                      byCur[cur].total += amt;
-                      if (b.settled) byCur[cur].settled += amt;
-                      else byCur[cur].unsettled += amt;
-                    });
-                    const currencies = Object.keys(byCur).sort();
-                    const totalItems = allCatBks.length;
-                    const settledItems = allCatBks.filter(b => b.settled).length;
-                    const isExpanded = !!expandedSumCats[t.id];
-                    const toggle = () => setExpandedSumCats(prev => ({ ...prev, [t.id]: !prev[t.id] }));
-                    const listItems = allCatBks
-                      .filter(b => summaryShowSettled || !b.settled)
-                      .sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-
-                    return (
-                      <div key={t.id} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
-                        {/* Header row — clickable */}
-                        <div onClick={toggle} style={{ padding: "13px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                          {/* Left: icon + label + count */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                            <span style={{ fontSize: 15 }}>{t.icon}</span>
-                            <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
-                            <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                              {totalItems}{settledItems > 0 ? ` · ${settledItems}✓` : ""}
+                  {(() => {
+                    const catToDKK = (amt, cur) => {
+                      if (!cur || cur === "DKK") return amt;
+                      if (!rates?.rates?.[cur]) return null;
+                      return amt / rates.rates[cur];
+                    };
+                    const renderItem = (b, isSolo, showBorder) => {
+                      const dkk = b.currency !== "DKK" ? catToDKK(parseFloat(b.price), b.currency) : null;
+                      return (
+                        <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: showBorder ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.42 : 1 }}>
+                          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+                            <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
+                            {b.name}
+                            {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
+                            {isSolo && <span style={{ marginLeft: 5, fontSize: 9, color: "var(--text-tiny)", border: "1px solid var(--border)", borderRadius: 3, padding: "0 3px", fontFamily: "'Source Code Pro', monospace" }}>{b.travelers === "peter" ? "P" : "F"}</span>}
+                          </div>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0, marginLeft: 12 }}>
+                            <span style={{ fontSize: 11, color: b.settled ? "var(--text-tiny)" : "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>
+                              {parseFloat(b.price).toFixed(2)} {b.currency}
                             </span>
-                          </div>
-                          {/* Right: amounts + chevron */}
-                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                              {currencies.map(cur => {
-                                const { settled, unsettled } = byCur[cur];
-                                return (
-                                  <div key={cur} style={{ display: "flex", alignItems: "baseline", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                                    {unsettled > 0 && (
-                                      <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                        {unsettled.toFixed(2)} {cur}
-                                      </span>
-                                    )}
-                                    {settled > 0 && (
-                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                        {unsettled > 0 ? `+${settled.toFixed(2)}✓` : `${settled.toFixed(2)} ${cur} ✓`}
-                                      </span>
-                                    )}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                            <span style={{ fontSize: 10, color: "var(--text-tiny)", marginTop: 3, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
-                          </div>
-                        </div>
-
-                        {/* Expandable item list */}
-                        {isExpanded && (
-                          <div style={{ borderTop: "1px solid var(--border)" }}>
-                            {listItems.length === 0 ? (
-                              <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                no unsettled items
-                              </div>
-                            ) : (
-                              listItems.map((b, i) => (
-                                <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.42 : 1 }}>
-                                  <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-                                    <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
-                                    {b.name}
-                                    {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
-                                  </div>
-                                  <span style={{ fontSize: 11, color: b.settled ? "var(--text-tiny)" : "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", flexShrink: 0, marginLeft: 12 }}>
-                                    {parseFloat(b.price).toFixed(2)} {b.currency}
-                                  </span>
-                                </div>
-                              ))
+                            {dkk !== null && (
+                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(dkk)}</span>
                             )}
                           </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    };
+
+                    return TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
+                      const allCatBks = bookings.filter(b => b.type === t.id && b.price);
+                      if (allCatBks.length === 0) return null;
+
+                      // Compute DKK totals (unsettled + settled separately)
+                      let unsettledDKK = 0, settledDKK = 0, approx = false;
+                      allCatBks.forEach(b => {
+                        const dkk = catToDKK(parseFloat(b.price), b.currency || "USD");
+                        if (dkk === null) { approx = true; return; }
+                        if (b.settled) settledDKK += dkk;
+                        else unsettledDKK += dkk;
+                      });
+
+                      const totalItems = allCatBks.length;
+                      const settledItems = allCatBks.filter(b => b.settled).length;
+                      const isExpanded = !!expandedSumCats[t.id];
+                      const toggle = () => setExpandedSumCats(prev => ({ ...prev, [t.id]: !prev[t.id] }));
+
+                      // Split into shared vs solo, apply settled filter, sort by date
+                      const sf = b => summaryShowSettled || !b.settled;
+                      const sd = (a, b) => (a.date || "").localeCompare(b.date || "");
+                      const sharedList = allCatBks.filter(b => !b.travelers || b.travelers === "both").filter(sf).sort(sd);
+                      const soloList   = allCatBks.filter(b =>  b.travelers && b.travelers !== "both").filter(sf).sort(sd);
+
+                      return (
+                        <div key={t.id} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+                          {/* Header row — clickable */}
+                          <div onClick={toggle} style={{ padding: "13px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                              <span style={{ fontSize: 15 }}>{t.icon}</span>
+                              <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
+                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                                {totalItems}{settledItems > 0 ? ` · ${settledItems}✓` : ""}
+                              </span>
+                            </div>
+                            {/* Right: converted DKK totals + chevron */}
+                            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
+                                {ratesLoading ? (
+                                  <span style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>…</span>
+                                ) : !rates ? (
+                                  <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no rates</span>
+                                ) : (
+                                  <>
+                                    {unsettledDKK > 0 && (
+                                      <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                        {approx ? "~" : "≈"}{Math.round(unsettledDKK)} DKK
+                                      </span>
+                                    )}
+                                    {settledDKK > 0 && (
+                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                                        {unsettledDKK > 0 ? `+${Math.round(settledDKK)}✓` : `≈${Math.round(settledDKK)} DKK ✓`}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                              <span style={{ fontSize: 10, color: "var(--text-tiny)", marginTop: 3, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
+                            </div>
+                          </div>
+
+                          {/* Expandable item list */}
+                          {isExpanded && (
+                            <div style={{ borderTop: "1px solid var(--border)" }}>
+                              {sharedList.length === 0 && soloList.length === 0 ? (
+                                <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
+                              ) : (
+                                <>
+                                  {sharedList.map((b, i) => renderItem(b, false, i < sharedList.length - 1 || soloList.length > 0))}
+                                  {soloList.length > 0 && (
+                                    <>
+                                      <div style={{ padding: "4px 16px 4px", fontSize: 9, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em", textTransform: "uppercase", borderTop: sharedList.length > 0 ? "1px solid var(--border)" : "none", background: "rgba(255,255,255,0.02)" }}>personal</div>
+                                      {soloList.map((b, i) => renderItem(b, true, i < soloList.length - 1))}
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </div>
