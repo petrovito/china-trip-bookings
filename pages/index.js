@@ -1766,66 +1766,69 @@ export default function App() {
 
                   {/* ── SETTLEMENT MODE ── */}
                   {summaryMode === "settlement" && (() => {
-                    const owedByCurrency = activeCurrencies
-                      .map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes }))
-                      .filter(x => Math.abs(x.pOwes) >= 0.01);
-                    const toDKK = (amount, currency) => {
-                      if (currency === "DKK") return amount;
-                      if (!rates?.rates?.[currency]) return null;
-                      return amount / rates.rates[currency];
+                    const toDKK = (amt, cur) => {
+                      if (!cur || cur === "DKK") return amt;
+                      if (!rates?.rates?.[cur]) return null;
+                      return amt / rates.rates[cur];
                     };
-                    const dkkAmounts = owedByCurrency.map(x => toDKK(x.pOwes, x.currency));
-                    const allConverted = dkkAmounts.every(v => v !== null);
-                    const totalDKK = allConverted ? dkkAmounts.reduce((s, v) => s + v, 0) : null;
-                    const rateTs = rates?.time_last_update_utc ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
+                    // Only shared expenses where someone actually paid
+                    const sharedBks = bookings.filter(b =>
+                      EXPENSE_TYPES.includes(b.type) && b.price && b.paid_by &&
+                      (!b.travelers || b.travelers === "both")
+                    );
+                    // net > 0 → Peter owes Friend; net < 0 → Friend owes Peter
+                    let netOpen = 0, netSettled = 0, approx = false;
+                    sharedBks.forEach(b => {
+                      const dkk = toDKK(parseFloat(b.price), b.currency || "USD");
+                      if (dkk === null) { approx = true; return; }
+                      const contrib = b.paid_by === "friend" ? dkk / 2 : -dkk / 2;
+                      if (b.settled) netSettled += contrib; else netOpen += contrib;
+                    });
+                    const pfx = approx ? "~" : "≈";
+                    const peterOwes = netOpen > 0.5;
+                    const friendOwes = netOpen < -0.5;
+                    const debtLabel = peterOwes
+                      ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
+                      : friendOwes
+                      ? (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`)
+                      : "All square";
+                    const debtColor = peterOwes
+                      ? (identity === "peter" ? "#f97316" : "#10b981")
+                      : friendOwes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
+                    const rateTs = rates?.time_last_update_utc
+                      ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+                      : null;
                     return (
-                      <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 20, border: "1px solid var(--border2)" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                          <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Settlement snapshot</div>
-                          <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 24, border: "1px solid var(--border2)" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                            <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>outstanding</div>
+                            <button className="btn" onClick={fetchRates} disabled={ratesLoading} style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>{ratesLoading ? "..." : "↻ rates"}</button>
+                          </div>
+                          {sharedBks.length === 0 ? (
+                            <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>No shared paid expenses yet.</div>
+                          ) : ratesLoading ? (
+                            <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>loading rates…</div>
+                          ) : !rates ? (
+                            <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>rates unavailable</div>
+                          ) : !peterOwes && !friendOwes ? (
+                            <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 16 }}>All square ✓</div>
+                          ) : (
+                            <>
+                              <div style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 10, fontFamily: "'Source Code Pro', monospace" }}>{debtLabel}</div>
+                              <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 40, color: debtColor, lineHeight: 1 }}>
+                                {pfx}{Math.round(Math.abs(netOpen))} <span style={{ fontSize: 18, color: "var(--text-faint)" }}>DKK</span>
+                              </div>
+                            </>
+                          )}
+                          {rates && Math.abs(netSettled) > 0.5 && (
+                            <div style={{ marginTop: 24, paddingTop: 16, borderTop: "1px solid var(--border)", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                              <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>already settled</span>
+                              <span style={{ fontSize: 15, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(netSettled))} DKK ✓</span>
+                            </div>
+                          )}
                         </div>
-                        {owedByCurrency.length === 0 ? (
-                          <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 13 }}>All square ✓</div>
-                        ) : (
-                          <>
-                            {owedByCurrency.map(({ currency, pOwes }) => {
-                              const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
-                              const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
-                              const dkk = toDKK(pOwes, currency);
-                              const debtLabel = pOwes > 0
-                                ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
-                                : (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`);
-                              const debtColor = pOwes > 0
-                                ? (identity === "peter" ? "#f97316" : "#10b981")
-                                : (identity === "peter" ? "#10b981" : "#f97316");
-                              return (
-                                <div key={currency} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                                  <div style={{ fontSize: 14, color: "var(--text)" }}>
-                                    {debtLabel}
-                                    <span style={{ color: debtColor, fontFamily: "'Source Code Pro', monospace", marginLeft: 8 }}>{fmtAmt(pOwes)}</span>
-                                  </div>
-                                  {dkk !== null && <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈ {Math.abs(dkk).toFixed(0)} DKK</span>}
-                                </div>
-                              );
-                            })}
-                            {owedByCurrency.length > 1 && totalDKK !== null && (
-                              <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                                <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>net total</div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                                  {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
-                                </div>
-                              </div>
-                            )}
-                            {owedByCurrency.length === 1 && totalDKK !== null && owedByCurrency[0].currency !== "DKK" && (
-                              <div style={{ borderTop: "1px solid var(--border)", marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "flex-end" }}>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 22, color: totalDKK > 0 ? "#f97316" : "#10b981" }}>
-                                  {totalDKK > 0 ? "+" : "−"}{Math.abs(totalDKK).toFixed(0)} <span style={{ fontSize: 13, color: "var(--text-faint)" }}>DKK</span>
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {rateTs && <div style={{ marginTop: 14, fontSize: 10, color: "var(--border)", fontFamily: "'Source Code Pro', monospace" }}>rates · {rateTs} UTC</div>}
+                        {rateTs && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 2 }}>rates · {rateTs} UTC</div>}
                       </div>
                     );
                   })()}
