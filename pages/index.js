@@ -120,6 +120,7 @@ export default function App() {
   const [segments, setSegments] = useState([]);
   const [locationImages, setLocationImages] = useState({});
   const [showSummary, setShowSummary] = useState(false);
+  const [summaryMode, setSummaryMode] = useState("expenses"); // "expenses" | "settlement"
   const [summaryShowSettled, setSummaryShowSettled] = useState(false);
   const [expandedSumCats, setExpandedSumCats] = useState({});
   const [expandedFoodDays, setExpandedFoodDays] = useState({});
@@ -939,11 +940,15 @@ export default function App() {
           {/* ── EXPENSES TAB ── */}
           {activeTab === "expenses" && (
             <>
-              {/* Summary button */}
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
-                <button className="btn" onClick={() => setShowSummary(true)}
+              {/* Summary buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
+                <button className="btn" onClick={() => { setSummaryMode("expenses"); setShowSummary(true); }}
                   style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
-                  ¥ summary
+                  ¥ expenses
+                </button>
+                <button className="btn" onClick={() => { setSummaryMode("settlement"); setShowSummary(true); }}
+                  style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
+                  ⇌ settlement
                 </button>
               </div>
               {bookings.length > 0 && (
@@ -1754,12 +1759,13 @@ export default function App() {
               <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.5)" }} onClick={() => setShowSummary(false)} />
               <div style={{ position: "relative", background: "var(--surface)", borderRadius: "16px 16px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 680, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -8px 40px rgba(0,0,0,0.3)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>Summary</div>
+                  <div style={{ fontSize: 13, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>{summaryMode === "settlement" ? "Settlement" : "Expenses"}</div>
                   <button className="btn" onClick={() => setShowSummary(false)} style={{ background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 18, padding: "0 4px" }}>✕</button>
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                  {activeCurrencies.length === 0 && <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>}
-                  {activeCurrencies.length > 0 && (() => {
+
+                  {/* ── SETTLEMENT MODE ── */}
+                  {summaryMode === "settlement" && (() => {
                     const owedByCurrency = activeCurrencies
                       .map(currency => ({ currency, pOwes: calcForCurrency(currency).pOwes }))
                       .filter(x => Math.abs(x.pOwes) >= 0.01);
@@ -1786,7 +1792,6 @@ export default function App() {
                               const sym = currency === "USD" ? "$" : currency === "EUR" ? "€" : currency === "KRW" ? "₩" : "";
                               const fmtAmt = v => `${sym}${Math.abs(v).toFixed(2)} ${sym ? "" : currency}`.trim();
                               const dkk = toDKK(pOwes, currency);
-                              // Personalize label: pOwes > 0 means Peter owes friend
                               const debtLabel = pOwes > 0
                                 ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
                                 : (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`);
@@ -1824,131 +1829,160 @@ export default function App() {
                       </div>
                     );
                   })()}
-                  {/* Show settled toggle */}
-                  <div style={{ display: "flex", alignItems: "center" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
-                      <input
-                        type="checkbox"
-                        checked={summaryShowSettled}
-                        onChange={e => setSummaryShowSettled(e.target.checked)}
-                        style={{ accentColor: "#0ea5e9", width: 14, height: 14, cursor: "pointer" }}
-                      />
-                      <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>show settled</span>
-                    </label>
-                  </div>
 
-                  {/* Category breakdown */}
-                  {(() => {
+                  {/* ── EXPENSE MODE ── */}
+                  {summaryMode === "expenses" && (() => {
                     const catToDKK = (amt, cur) => {
                       if (!cur || cur === "DKK") return amt;
                       if (!rates?.rates?.[cur]) return null;
                       return amt / rates.rates[cur];
                     };
-                    const renderItem = (b, isSolo, showBorder) => {
-                      const dkk = b.currency !== "DKK" ? catToDKK(parseFloat(b.price), b.currency) : null;
-                      return (
-                        <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: showBorder ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.42 : 1 }}>
-                          <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-                            <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
-                            {b.name}
-                            {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
-                            {isSolo && <span style={{ marginLeft: 5, fontSize: 9, color: "var(--text-tiny)", border: "1px solid var(--border)", borderRadius: 3, padding: "0 3px", fontFamily: "'Source Code Pro', monospace" }}>{b.travelers === "peter" ? "P" : "F"}</span>}
-                          </div>
-                          <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0, marginLeft: 12 }}>
-                            <span style={{ fontSize: 11, color: b.settled ? "var(--text-tiny)" : "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>
-                              {parseFloat(b.price).toFixed(2)} {b.currency}
-                            </span>
-                            {dkk !== null && (
-                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(dkk)}</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    };
-
-                    return TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                      const allCatBks = bookings.filter(b => b.type === t.id && b.price);
-                      if (allCatBks.length === 0) return null;
-
-                      // Compute DKK totals (unsettled + settled separately)
-                      let unsettledDKK = 0, settledDKK = 0, approx = false;
-                      allCatBks.forEach(b => {
-                        const dkk = catToDKK(parseFloat(b.price), b.currency || "USD");
-                        if (dkk === null) { approx = true; return; }
-                        if (b.settled) settledDKK += dkk;
-                        else unsettledDKK += dkk;
+                    const sumDKK = bks => {
+                      let open = 0, settled = 0, approx = false;
+                      bks.forEach(b => {
+                        const d = catToDKK(parseFloat(b.price), b.currency || "USD");
+                        if (d === null) { approx = true; return; }
+                        if (b.settled) settled += d; else open += d;
                       });
-
-                      const totalItems = allCatBks.length;
-                      const settledItems = allCatBks.filter(b => b.settled).length;
-                      const isExpanded = !!expandedSumCats[t.id];
-                      const toggle = () => setExpandedSumCats(prev => ({ ...prev, [t.id]: !prev[t.id] }));
-
-                      // Split into shared vs solo, apply settled filter, sort by date
-                      const sf = b => summaryShowSettled || !b.settled;
-                      const sd = (a, b) => (a.date || "").localeCompare(b.date || "");
-                      const sharedList = allCatBks.filter(b => !b.travelers || b.travelers === "both").filter(sf).sort(sd);
-                      const soloList   = allCatBks.filter(b =>  b.travelers && b.travelers !== "both").filter(sf).sort(sd);
-
+                      return { open, settled, total: open + settled, approx };
+                    };
+                    const renderCatCard = (t, items, groupKey) => {
+                      if (items.length === 0) return null;
+                      const cardKey = `${groupKey}-${t.id}`;
+                      const isExp = !!expandedSumCats[cardKey];
+                      const toggle = () => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
+                      const { open: unsettledDKK, settled: settledDKK, approx } = sumDKK(items);
+                      const settledCount = items.filter(b => b.settled).length;
+                      const listItems = items.filter(b => summaryShowSettled || !b.settled).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
                       return (
-                        <div key={t.id} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
-                          {/* Header row — clickable */}
-                          <div onClick={toggle} style={{ padding: "13px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                        <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+                          <div onClick={toggle} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                              <span style={{ fontSize: 15 }}>{t.icon}</span>
+                              <span style={{ fontSize: 14 }}>{t.icon}</span>
                               <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
-                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                {totalItems}{settledItems > 0 ? ` · ${settledItems}✓` : ""}
-                              </span>
+                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{items.length}{settledCount > 0 ? ` · ${settledCount}✓` : ""}</span>
                             </div>
-                            {/* Right: converted DKK totals + chevron */}
                             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                                {ratesLoading ? (
-                                  <span style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>…</span>
-                                ) : !rates ? (
-                                  <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no rates</span>
-                                ) : (
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                {ratesLoading ? <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>…</span>
+                                : !rates ? null : (
                                   <>
-                                    {unsettledDKK > 0 && (
-                                      <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                        {approx ? "~" : "≈"}{Math.round(unsettledDKK)} DKK
-                                      </span>
-                                    )}
-                                    {settledDKK > 0 && (
-                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                        {unsettledDKK > 0 ? `+${Math.round(settledDKK)}✓` : `≈${Math.round(settledDKK)} DKK ✓`}
-                                      </span>
-                                    )}
+                                    {unsettledDKK > 0 && <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{approx ? "~" : "≈"}{Math.round(unsettledDKK)} DKK</span>}
+                                    {settledDKK > 0 && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{unsettledDKK > 0 ? `+${Math.round(settledDKK)}✓` : `≈${Math.round(settledDKK)} DKK ✓`}</span>}
                                   </>
                                 )}
                               </div>
-                              <span style={{ fontSize: 10, color: "var(--text-tiny)", marginTop: 3, flexShrink: 0 }}>{isExpanded ? "▲" : "▼"}</span>
+                              <span style={{ fontSize: 10, color: "var(--text-tiny)", marginTop: 2, flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
                             </div>
                           </div>
-
-                          {/* Expandable item list */}
-                          {isExpanded && (
+                          {isExp && (
                             <div style={{ borderTop: "1px solid var(--border)" }}>
-                              {sharedList.length === 0 && soloList.length === 0 ? (
-                                <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
-                              ) : (
-                                <>
-                                  {sharedList.map((b, i) => renderItem(b, false, i < sharedList.length - 1 || soloList.length > 0))}
-                                  {soloList.length > 0 && (
-                                    <>
-                                      <div style={{ padding: "4px 16px 4px", fontSize: 9, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.1em", textTransform: "uppercase", borderTop: sharedList.length > 0 ? "1px solid var(--border)" : "none", background: "rgba(255,255,255,0.02)" }}>personal</div>
-                                      {soloList.map((b, i) => renderItem(b, true, i < soloList.length - 1))}
-                                    </>
-                                  )}
-                                </>
-                              )}
+                              {listItems.length === 0
+                                ? <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
+                                : listItems.map((b, i) => {
+                                    const dkk = b.currency !== "DKK" ? catToDKK(parseFloat(b.price), b.currency) : null;
+                                    return (
+                                      <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.42 : 1 }}>
+                                        <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+                                          <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
+                                          {b.name}
+                                          {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
+                                        </div>
+                                        <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0, marginLeft: 12 }}>
+                                          <span style={{ fontSize: 11, color: b.settled ? "var(--text-tiny)" : "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</span>
+                                          {dkk !== null && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(dkk)}</span>}
+                                        </div>
+                                      </div>
+                                    );
+                                  })
+                              }
                             </div>
                           )}
                         </div>
                       );
-                    });
+                    };
+                    const sectionLabel = txt => (
+                      <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.12em", paddingLeft: 2 }}>{txt}</div>
+                    );
+                    const subtotalBar = (label, open, settled, approx, sub) => (
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                        <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{approx ? "~" : "≈"}{Math.round(open)} DKK</div>
+                          {settled > 0 && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>+{Math.round(settled)} settled</div>}
+                          {sub && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
+                        </div>
+                      </div>
+                    );
+
+                    const EXPENSE_BKS = bookings.filter(b => EXPENSE_TYPES.includes(b.type) && b.price);
+                    const collectiveBks = EXPENSE_BKS.filter(b => !b.travelers || b.travelers === "both");
+                    const peterBks     = EXPENSE_BKS.filter(b => b.travelers === "peter");
+                    const friendBks    = EXPENSE_BKS.filter(b => b.travelers === "friend");
+                    const colSum = sumDKK(collectiveBks);
+                    const petSum = sumDKK(peterBks);
+                    const friSum = sumDKK(friendBks);
+
+                    return (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                        {/* show settled toggle */}
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none" }}>
+                            <input type="checkbox" checked={summaryShowSettled} onChange={e => setSummaryShowSettled(e.target.checked)} style={{ accentColor: "#0ea5e9", width: 14, height: 14, cursor: "pointer" }} />
+                            <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>show settled</span>
+                          </label>
+                        </div>
+
+                        {/* Collective */}
+                        {collectiveBks.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {sectionLabel("collective")}
+                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, collectiveBks.filter(b => b.type === t.id), "col"))}
+                            {rates && subtotalBar("shared total", colSum.open, colSum.settled, colSum.approx, `→ ≈${Math.round(colSum.open / 2)} each (open)`)}
+                          </div>
+                        )}
+
+                        {/* Peter personal */}
+                        {peterBks.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {sectionLabel("peter · personal")}
+                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, peterBks.filter(b => b.type === t.id), "pet"))}
+                            {rates && subtotalBar("peter total", petSum.open, petSum.settled, petSum.approx, null)}
+                          </div>
+                        )}
+
+                        {/* Friend personal */}
+                        {friendBks.length > 0 && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                            {sectionLabel(`${FRIEND_NAME} · personal`)}
+                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, friendBks.filter(b => b.type === t.id), "fri"))}
+                            {rates && subtotalBar(`${FRIEND_NAME} total`, friSum.open, friSum.settled, friSum.approx, null)}
+                          </div>
+                        )}
+
+                        {/* Per-person totals */}
+                        {rates && EXPENSE_BKS.length > 0 && (
+                          <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border2)", padding: 20 }}>
+                            <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>per person · open</div>
+                            {[["Peter", colSum.open / 2 + petSum.open, colSum.approx || petSum.approx], [FRIEND_NAME, colSum.open / 2 + friSum.open, colSum.approx || friSum.approx]].map(([name, total, apx]) => (
+                              <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                                <span style={{ fontSize: 13, color: "var(--text)" }}>{name}</span>
+                                <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "var(--text)" }}>{apx ? "~" : "≈"}{Math.round(total)} <span style={{ fontSize: 12, color: "var(--text-faint)" }}>DKK</span></span>
+                              </div>
+                            ))}
+                            <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 10, fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                              personal + ½ collective · unsettled only
+                            </div>
+                          </div>
+                        )}
+
+                        {EXPENSE_BKS.length === 0 && (
+                          <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>
+                        )}
+                      </div>
+                    );
                   })()}
+
                 </div>
               </div>
             </div>
