@@ -1802,9 +1802,6 @@ export default function App() {
                     const rateTs = rates?.time_last_update_utc
                       ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
                       : null;
-                    const listExpanded = !!expandedSumCats["settle"];
-                    const toggleList = () => setExpandedSumCats(prev => ({ ...prev, settle: !prev.settle }));
-                    const listItems = sharedBks.filter(b => summaryShowSettled || !b.settled);
                     return (
                       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                         <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -1814,52 +1811,73 @@ export default function App() {
                           </button>
                         </div>
 
-                        {/* Expandable item list */}
-                        {sharedBks.length > 0 && (
-                          <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
-                            <div onClick={toggleList} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <span style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                                shared expenses <span style={{ color: "var(--text-tiny)", fontWeight: 400 }}>{sharedBks.length}</span>
-                              </span>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                <label onClick={e => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: 5, cursor: "pointer", userSelect: "none" }}>
-                                  <input type="checkbox" checked={summaryShowSettled} onChange={e => setSummaryShowSettled(e.target.checked)} style={{ accentColor: "#0ea5e9", width: 12, height: 12 }} />
-                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>settled</span>
-                                </label>
-                                <span style={{ fontSize: 10, color: "var(--text-tiny)" }}>{listExpanded ? "▲" : "▼"}</span>
+                        {/* Category cards */}
+                        {sharedBks.length > 0 && TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
+                          const catBks = sharedBks.filter(b => b.type === t.id);
+                          if (catBks.length === 0) return null;
+                          const cardKey = `settle-${t.id}`;
+                          const isExp = !!expandedSumCats[cardKey];
+                          const toggle = () => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
+                          let catNet = 0, catApprox = false;
+                          catBks.forEach(b => { const c = getContrib(b); if (c === null) catApprox = true; else catNet += c; });
+                          const catPeterOwes = catNet > 0.5;
+                          const catFriendOwes = catNet < -0.5;
+                          const listItems = catBks.filter(b => summaryShowSettled || !b.settled);
+                          return (
+                            <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+                              <div onClick={toggle} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                                  <span style={{ fontSize: 14 }}>{t.icon}</span>
+                                  <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
+                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{catBks.length}</span>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  {rates && (catPeterOwes || catFriendOwes) && (
+                                    <span style={{ fontSize: 12, color: catPeterOwes ? (identity === "peter" ? "#f97316" : "#10b981") : (identity === "peter" ? "#10b981" : "#f97316"), fontFamily: "'Source Code Pro', monospace" }}>
+                                      {catApprox ? "~" : "≈"}{Math.round(Math.abs(catNet))} DKK
+                                    </span>
+                                  )}
+                                  {rates && !catPeterOwes && !catFriendOwes && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>square</span>}
+                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
+                                </div>
                               </div>
+                              {isExp && (
+                                <div style={{ borderTop: "1px solid var(--border)" }}>
+                                  {listItems.length === 0
+                                    ? <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
+                                    : listItems.map((b, i) => {
+                                        const c = getContrib(b);
+                                        const friendPaid = b.paid_by === "friend";
+                                        const rowColor = friendPaid ? "#f97316" : "#10b981";
+                                        return (
+                                          <div key={b.id} style={{ padding: "8px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.45 : 1, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
+                                                {b.name}
+                                                {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
+                                              </div>
+                                              <div style={{ fontSize: 10, color: rowColor, fontFamily: "'Source Code Pro', monospace", marginTop: 2 }}>{friendPaid ? `${FRIEND_NAME} paid` : "Peter paid"}</div>
+                                            </div>
+                                            <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                              <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</div>
+                                              {c !== null && <div style={{ fontSize: 11, color: rowColor, fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(c))} DKK</div>}
+                                            </div>
+                                          </div>
+                                        );
+                                      })
+                                  }
+                                </div>
+                              )}
                             </div>
-                            {listExpanded && (
-                              <div style={{ borderTop: "1px solid var(--border)" }}>
-                                {listItems.length === 0
-                                  ? <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
-                                  : listItems.map((b, i) => {
-                                      const c = getContrib(b);
-                                      const friendPaid = b.paid_by === "friend";
-                                      const rowColor = friendPaid ? "#f97316" : "#10b981";
-                                      return (
-                                        <div key={b.id} style={{ padding: "8px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.45 : 1, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                                          <div style={{ flex: 1, minWidth: 0 }}>
-                                            <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                              <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
-                                              {b.name}
-                                              {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
-                                            </div>
-                                            <div style={{ fontSize: 10, color: rowColor, fontFamily: "'Source Code Pro', monospace", marginTop: 2 }}>
-                                              {friendPaid ? `${FRIEND_NAME} paid` : "Peter paid"}
-                                            </div>
-                                          </div>
-                                          <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                            <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</div>
-                                            {c !== null && <div style={{ fontSize: 11, color: rowColor, fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(c))} DKK</div>}
-                                          </div>
-                                        </div>
-                                      );
-                                    })
-                                }
-                              </div>
-                            )}
-                          </div>
+                          );
+                        })}
+                        {/* settled toggle */}
+                        {sharedBks.length > 0 && (
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", paddingLeft: 2 }}>
+                            <input type="checkbox" checked={summaryShowSettled} onChange={e => setSummaryShowSettled(e.target.checked)} style={{ accentColor: "#0ea5e9", width: 13, height: 13 }} />
+                            <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>show settled</span>
+                          </label>
                         )}
 
                         {/* Breakdown + net */}
