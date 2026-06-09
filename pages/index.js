@@ -1818,10 +1818,11 @@ export default function App() {
                           const cardKey = `settle-${t.id}`;
                           const isExp = !!expandedSumCats[cardKey];
                           const toggle = () => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
-                          let catNet = 0, catApprox = false;
-                          catBks.forEach(b => { const c = getContrib(b); if (c === null) catApprox = true; else catNet += c; });
-                          const catPeterOwes = catNet > 0.5;
-                          const catFriendOwes = catNet < -0.5;
+                          let catOutstanding = 0, catSettled = 0, catApprox = false;
+                          catBks.forEach(b => { const c = getContrib(b); if (c === null) catApprox = true; else if (b.settled) catSettled += c; else catOutstanding += c; });
+                          const catPeterOwes = catOutstanding > 0.5;
+                          const catFriendOwes = catOutstanding < -0.5;
+                          const outColor = catPeterOwes ? (identity === "peter" ? "#f97316" : "#10b981") : catFriendOwes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
                           const listItems = catBks.filter(b => summaryShowSettled || !b.settled);
                           return (
                             <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
@@ -1832,12 +1833,19 @@ export default function App() {
                                   <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{catBks.length}</span>
                                 </div>
                                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                                   {rates && (catPeterOwes || catFriendOwes) && (
-                                    <span style={{ fontSize: 12, color: catPeterOwes ? (identity === "peter" ? "#f97316" : "#10b981") : (identity === "peter" ? "#10b981" : "#f97316"), fontFamily: "'Source Code Pro', monospace" }}>
-                                      {catApprox ? "~" : "≈"}{Math.round(Math.abs(catNet))} DKK
+                                    <span style={{ fontSize: 13, color: outColor, fontFamily: "'Source Code Pro', monospace" }}>
+                                      {catApprox ? "~" : "≈"}{Math.round(Math.abs(catOutstanding))} DKK
                                     </span>
                                   )}
                                   {rates && !catPeterOwes && !catFriendOwes && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>square</span>}
+                                  {rates && Math.abs(catSettled) > 0.5 && (
+                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                                      +{Math.round(Math.abs(catSettled))} ✓
+                                    </span>
+                                  )}
+                                </div>
                                   <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
                                 </div>
                               </div>
