@@ -7,7 +7,8 @@ const TYPES = [
   { id: "train",    label: "Train",    color: "#10b981", icon: "🚄" },
   { id: "ticket",   label: "Ticket",   color: "#f97316", icon: "🎟" },
   { id: "food",     label: "Food",     color: "#e879f9", icon: "🍜" },
-  { id: "activity", label: "Activity", color: "#fbbf24", icon: "📍" },
+  { id: "activity",       label: "Activity", color: "#fbbf24", icon: "📍" },
+  { id: "city_transport", label: "City",     color: "#06b6d4", icon: "🚇" },
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
@@ -17,12 +18,12 @@ const FRIEND_NAME = process.env.NEXT_PUBLIC_FRIEND_NAME || "friend";
 const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
-  time: "", time_end: "", origin: "",
+  time: "", time_end: "", origin: "", subtype: "",
   reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
 // Types excluded from expense tracking
-const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food"];
+const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food", "city_transport"];
 
 const TODO_CATS = [
   { id: "pack",   label: "Pack",   icon: "🧳" },
@@ -34,7 +35,22 @@ const TODO_CATS = [
 ];
 const EMPTY_TODO = { title: "", category: "pack", assignee: "both", deadline: "", segment_id: null };
 // Booking types that can have a pass/QR attached
-const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity"];
+const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity", "city_transport"];
+
+const CITY_SUBTYPES = [
+  { id: "taxi",  icon: "🚕", label: "Taxi"  },
+  { id: "bus",   icon: "🚌", label: "Bus"   },
+  { id: "metro", icon: "🚇", label: "Metro" },
+  { id: "other", icon: "🚐", label: "Other" },
+];
+function parseSubtype(notes) {
+  const m = (notes || "").match(/^\[(taxi|bus|metro|other)\] ?([\s\S]*)/);
+  return m ? { subtype: m[1], cleanNotes: m[2] } : { subtype: "", cleanNotes: notes || "" };
+}
+function encodeSubtype(subtype, notes) {
+  const clean = (notes || "").replace(/^\[(taxi|bus|metro|other)\] ?/, "");
+  return subtype ? `[${subtype}] ${clean}`.trim() : clean;
+}
 
 // ZXing format string → bwip-js bcid
 const FORMAT_TO_BCID = {
@@ -428,6 +444,7 @@ export default function App() {
       time: form.time || null,
       time_end: form.time_end || null,
       origin: form.origin || null,
+      notes: form.type === "city_transport" ? (encodeSubtype(form.subtype, form.notes) || null) : (form.notes || null),
     };
     const base = apiBase(form.type);
     if (editId) {
@@ -485,9 +502,13 @@ export default function App() {
     setForm({
       type: b.type, name: b.name, date: b.date || "", date_end: b.date_end || "",
       price: b.price != null ? String(b.price) : "", currency: b.currency || "USD",
-      platform: b.platform || "", reference: b.reference || "", notes: b.notes || "",
+      platform: b.platform || "", reference: b.reference || "",
+      ...(b.type === "city_transport"
+        ? { notes: parseSubtype(b.notes).cleanNotes, subtype: parseSubtype(b.notes).subtype }
+        : { notes: b.notes || "", subtype: "" }),
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
       time: b.time || "", time_end: b.time_end || "", origin,
+      reminder: false, reminderType: "buy", reminderAssignee: "me",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -812,6 +833,17 @@ export default function App() {
                   </button>
                 ))}
               </div>
+              {form.type === "city_transport" && (
+                <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>mode</span>
+                  {CITY_SUBTYPES.map(s => (
+                    <button key={s.id} className="btn" onClick={() => setForm(f => ({ ...f, subtype: f.subtype === s.id ? "" : s.id }))}
+                      style={{ padding: "5px 10px", borderRadius: 5, border: `1.5px solid ${form.subtype === s.id ? "#06b6d4" : "var(--border)"}`, background: form.subtype === s.id ? "#06b6d420" : "transparent", color: form.subtype === s.id ? "#06b6d4" : "var(--text-faint)", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>
+                      {s.icon} {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div style={{ gridColumn: "1 / -1" }}>
                   <input placeholder="Name / description *" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} style={inp} />
@@ -845,23 +877,23 @@ export default function App() {
                     </select>
                   </div>
                 )}
-                <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
+                <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : form.type === "city_transport" ? "To (optional)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
-                {(form.type === "flight" || form.type === "train") && (
+                {(form.type === "flight" || form.type === "train" || form.type === "city_transport") && (
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <input placeholder={form.type === "flight" ? "From (e.g. Copenhagen, PEK)" : "From (e.g. Beijing, BJS)"} value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} style={inp} />
+                    <input placeholder={form.type === "flight" ? "From (e.g. Copenhagen, PEK)" : form.type === "train" ? "From (e.g. Beijing, BJS)" : "From (optional)"} value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} style={inp} />
                   </div>
                 )}
                 <div>
                   <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
-                    {form.type === "hotel" ? "Check-in time" : (form.type === "flight" || form.type === "train") ? "Departs" : "Starts"}
+                    {form.type === "hotel" ? "Check-in time" : (form.type === "flight" || form.type === "train" || form.type === "city_transport") ? "Departs" : "Starts"}
                   </div>
                   <input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} style={inp} />
                 </div>
                 {form.type !== "food" && (
                   <div>
                     <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
-                      {form.type === "hotel" ? "Check-out time" : (form.type === "flight" || form.type === "train") ? "Arrives" : "Ends"}
+                      {form.type === "hotel" ? "Check-out time" : (form.type === "flight" || form.type === "train" || form.type === "city_transport") ? "Arrives" : "Ends"}
                     </div>
                     <input type="time" value={form.time_end} onChange={e => setForm(f => ({ ...f, time_end: e.target.value }))} style={inp} />
                   </div>
@@ -1007,6 +1039,7 @@ export default function App() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {filtered.map(b => {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
+                    const subtypeInfo = b.type === "city_transport" ? CITY_SUBTYPES.find(s => s.id === parseSubtype(b.notes).subtype) : null;
                     return (
                       <div key={b.id} className="card" style={{ background: b.paid_by ? "var(--surface)" : "var(--surface)", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "var(--text-tiny)"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
                         {canWrite && (
@@ -1041,6 +1074,7 @@ export default function App() {
                         )}
                         <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flexWrap: "wrap", paddingRight: 60 }}>
                           <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: t.color, background: `${t.color}18`, padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{t.icon} {t.label}</span>
+                          {subtypeInfo && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#06b6d4", background: "#06b6d418", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{subtypeInfo.icon} {subtypeInfo.label}</span>}
                           {!b.paid_by && b.type !== "activity" && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#f59e0b", background: "#f59e0b18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>⏳ pending</span>}
                           {b.settled && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "#10b981", background: "#10b98118", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>✓ settled</span>}
                           {todos.some(t => t.booking_id === b.id && !t.done) && <span style={{ fontSize: 10, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", background: "var(--accent)18", padding: "2px 7px", borderRadius: 4, letterSpacing: "0.06em", textTransform: "uppercase", whiteSpace: "nowrap" }}>📋 todo</span>}
@@ -1048,7 +1082,7 @@ export default function App() {
                         </div>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 20px", marginTop: 10 }}>
                           {b.date && <Meta label="date" value={b.date_end ? `${b.date} → ${b.date_end}` : b.date} />}
-                          {(b.type === "flight" || b.type === "train") && b.origin && <Meta label="from" value={b.origin} />}
+                          {(b.type === "flight" || b.type === "train" || b.type === "city_transport") && b.origin && <Meta label="from" value={b.origin} />}
                           {b.time && <Meta label="time" value={b.time + (b.time_end ? ` → ${b.time_end}` : "")} />}
                           {b.location && <Meta label="loc" value={b.location} />}
                           {b.price && <Meta label="price" value={fmt(b.price, b.currency)} highlight />}
@@ -1057,7 +1091,7 @@ export default function App() {
                           {b.type !== "activity" && <Meta label="travelers" value={b.travelers === "friend" ? FRIEND_NAME : b.travelers || "both"} />}
                           {b.type !== "activity" && (b.paid_by ? <Meta label="paid by" value={b.paid_by === "friend" ? FRIEND_NAME : b.paid_by} /> : <Meta label="paid by" value="—" />)}
                         </div>
-                        {b.notes && <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                        {(() => { const n = b.type === "city_transport" ? parseSubtype(b.notes).cleanNotes : b.notes; return n ? <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{n}</div> : null; })()}
                       </div>
                     );
                   })}
@@ -1529,7 +1563,7 @@ export default function App() {
                                     const myPasses = getBookingPasses(b).filter(p => p.who === identity);
                                     const hasPasses = getBookingPasses(b).length > 0;
                                     const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
-                                    const isTransport = b.type === "flight" || b.type === "train";
+                                    const isTransport = b.type === "flight" || b.type === "train" || b.type === "city_transport";
                                     return (
                                       <div key={b.id} className="trip-card"
                                         onClick={() => hasDetails && toggleCard(b.id)}
@@ -1589,7 +1623,7 @@ export default function App() {
                                                 <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span>
                                               </div>
                                             )}
-                                            {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                                            {(() => { const n = b.type === "city_transport" ? parseSubtype(b.notes).cleanNotes : b.notes; return n ? <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{n}</div> : null; })()}
                                             <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
                                               <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
                                                 style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}

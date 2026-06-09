@@ -106,7 +106,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type:     { type: "string", enum: ["ticket", "food", "activity"], description: "ticket=attraction/museum, food=restaurant, activity=other plan" },
+        type:     { type: "string", enum: ["ticket", "food", "activity", "city_transport"], description: "ticket=attraction/museum, food=restaurant, activity=other plan, city_transport=local transit" },
         name:     { type: "string", description: "Name of the attraction, restaurant, or activity" },
         location: { type: "string", description: "City, e.g. 'Beijing'" },
         date:     { type: "string", description: "Date in YYYY-MM-DD format" },
@@ -123,7 +123,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type:     { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"] },
+        type:     { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport"] },
         name:     { type: "string", description: "Name / description of the booking" },
         date:     { type: "string", description: "Start date in YYYY-MM-DD format" },
         date_end: { type: "string", description: "End/checkout date in YYYY-MM-DD format" },
@@ -143,7 +143,7 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "all"], description: "Filter by type — omit for all" },
+        type: { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport", "all"], description: "Filter by type — omit for all" },
       },
     },
   },
@@ -172,7 +172,7 @@ const TOOLS = [
       type: "object",
       properties: {
         id:         { type: "string", description: "The UUID of the booking to update" },
-        type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity"], description: "Optional new booking type" },
+        type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport"], description: "Optional new booking type" },
         name:       { type: "string", description: "Booking name" },
         date:       { type: "string", description: "Date in YYYY-MM-DD format" },
         date_end:   { type: "string", description: "End date in YYYY-MM-DD format" },
