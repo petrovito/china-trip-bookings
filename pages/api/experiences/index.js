@@ -8,7 +8,7 @@ export default async function handler(req, res) {
     const { data, error } = await supabase
       .from("bookings")
       .select("*")
-      .in("type", ["ticket", "food", "activity", "city_transport"])
+      .in("type", ["ticket", "food", "activity", "city_transport", "shopping"])
       .order("date", { ascending: true });
     if (error) return res.status(500).json({ error: error.message });
     return res.json(data);

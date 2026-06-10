@@ -9,6 +9,7 @@ const TYPES = [
   { id: "food",     label: "Food",     color: "#e879f9", icon: "🍜" },
   { id: "activity",       label: "Activity", color: "#fbbf24", icon: "📍" },
   { id: "city_transport", label: "City",     color: "#06b6d4", icon: "🚇" },
+  { id: "shopping",      label: "Shopping", color: "#84cc16", icon: "🛍" },
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
@@ -23,7 +24,7 @@ const EMPTY_FORM = {
 };
 
 // Types excluded from expense tracking
-const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food", "city_transport"];
+const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food", "city_transport", "shopping"];
 
 const TODO_CATS = [
   { id: "pack",   label: "Pack",   icon: "🧳" },
@@ -890,7 +891,7 @@ export default function App() {
                   </div>
                   <input type="time" value={form.time} onChange={e => setForm(f => ({ ...f, time: e.target.value }))} style={inp} />
                 </div>
-                {form.type !== "food" && (
+                {form.type !== "food" && form.type !== "shopping" && (
                   <div>
                     <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>
                       {form.type === "hotel" ? "Check-out time" : (form.type === "flight" || form.type === "train" || form.type === "city_transport") ? "Arrives" : "Ends"}

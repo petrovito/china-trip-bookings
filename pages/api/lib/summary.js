@@ -1,5 +1,5 @@
 // pages/api/lib/summary.js
-export const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food"];
+export const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food", "shopping"];
 
 function peterShare(b) {
   if (!b.price) return 0;
