@@ -141,6 +141,7 @@ export default function App() {
   const [summaryShowSettled, setSummaryShowSettled] = useState(false);
   const [expandedSumCats, setExpandedSumCats] = useState({});
   const [expandedFoodDays, setExpandedFoodDays] = useState({});
+  const [expandedTransitDays, setExpandedTransitDays] = useState({});
   // Todos
   const [todos, setTodos] = useState([]);
   const [todoForm, setTodoForm] = useState(EMPTY_TODO);
@@ -1529,8 +1530,10 @@ export default function App() {
                               const isToday = d === today;
                               const nonHotel = dayBks.filter(b => b.type !== "hotel" && b.type !== "flight" && b.type !== "train");
                               const foodBks = nonHotel.filter(b => b.type === "food");
-                              const otherBks = nonHotel.filter(b => b.type !== "food");
+                              const transitBks = nonHotel.filter(b => b.type === "city_transport");
+                              const otherBks = nonHotel.filter(b => b.type !== "food" && b.type !== "city_transport");
                               const isFoodExpanded = expandedFoodDays[d];
+                              const isTransitExpanded = expandedTransitDays[d];
 
                               // Food summary line
                               const foodByCurrency = foodBks.reduce((acc, b) => {
@@ -1541,7 +1544,16 @@ export default function App() {
                               const foodSummary = Object.entries(foodByCurrency)
                                 .map(([c, v]) => `${v.toFixed(0)} ${c}`).join(" + ");
 
-                              if (otherBks.length === 0 && foodBks.length === 0 && !isToday) return null;
+                              // Transit summary line
+                              const transitByCurrency = transitBks.reduce((acc, b) => {
+                                if (!b.price || !b.currency) return acc;
+                                acc[b.currency] = (acc[b.currency] || 0) + parseFloat(b.price);
+                                return acc;
+                              }, {});
+                              const transitSummary = Object.entries(transitByCurrency)
+                                .map(([c, v]) => `${v.toFixed(0)} ${c}`).join(" + ");
+
+                              if (otherBks.length === 0 && foodBks.length === 0 && transitBks.length === 0 && !isToday) return null;
 
                               return (
                                 <div key={d} ref={isToday ? todayRef : null} style={{ marginBottom: 12 }}>
@@ -1677,6 +1689,39 @@ export default function App() {
                                           {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{fmt(b.price, b.currency)}</span>}
                                         </div>
                                       ))}
+                                    </div>
+                                  )}
+
+                                  {/* City transport one-liner */}
+                                  {transitBks.length > 0 && (
+                                    <div>
+                                      <div className="trip-card"
+                                        onClick={() => setExpandedTransitDays(p => ({ ...p, [d]: !p[d] }))}
+                                        style={{ background: "var(--surface)", borderRadius: 7, padding: "8px 14px", marginBottom: isTransitExpanded ? 0 : 6, borderLeft: "3px solid #06b6d4", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <span style={{ fontSize: 13 }}>🚇</span>
+                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                            {transitBks.length} {transitBks.length === 1 ? "ride" : "rides"}
+                                          </span>
+                                          {transitSummary && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {transitSummary}</span>}
+                                        </div>
+                                        <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isTransitExpanded ? "▲" : "▼"}</span>
+                                      </div>
+                                      {isTransitExpanded && transitBks.map(b => {
+                                        const { subtype, cleanNotes } = parseSubtype(b.notes);
+                                        const subtypeInfo = CITY_SUBTYPES.find(s => s.id === subtype);
+                                        const icon = subtypeInfo?.icon || "🚇";
+                                        const label = b.name || cleanNotes || subtypeInfo?.label || "Transit";
+                                        return (
+                                          <div key={b.id} style={{ background: "var(--surface2)", borderRadius: "0 0 6px 6px", padding: "7px 14px 7px 40px", marginBottom: 2, borderLeft: "3px solid #06b6d420", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                                            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+                                              <span style={{ fontSize: 12 }}>{icon}</span>
+                                              <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "'Georgia', serif", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                                            </div>
+                                            {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{fmt(b.price, b.currency)}</span>}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   )}
                                 </div>
