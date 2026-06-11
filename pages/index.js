@@ -142,6 +142,7 @@ export default function App() {
   const [expandedSumCats, setExpandedSumCats] = useState({});
   const [expandedFoodDays, setExpandedFoodDays] = useState({});
   const [expandedTransitDays, setExpandedTransitDays] = useState({});
+  const [segmentExpenseOpen, setSegmentExpenseOpen] = useState(null);
   // Todos
   const [todos, setTodos] = useState([]);
   const [todoForm, setTodoForm] = useState(EMPTY_TODO);
@@ -1488,9 +1489,82 @@ export default function App() {
                                 </div>
                               </div>
                             </div>
-                            <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", flexShrink: 0, marginTop: 3 }}>{isCollapsed ? "▸" : "▾"}</span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 2 }}>
+                              <button
+                                className="btn"
+                                onClick={e => { e.stopPropagation(); setSegmentExpenseOpen(prev => prev === segment.id ? null : segment.id); }}
+                                style={{ background: segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.15)" : "rgba(255,255,255,0.06)", border: `1px solid ${segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.3)" : "var(--border)"}`, borderRadius: 5, color: segmentExpenseOpen === segment.id ? "var(--accent)" : "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px", letterSpacing: "0.06em", lineHeight: 1.6 }}
+                              >¥ costs</button>
+                              <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{isCollapsed ? "▸" : "▾"}</span>
+                            </div>
                           </div>
                         </div>
+
+                        {/* Segment expense summary panel */}
+                        {segmentExpenseOpen === segment.id && (() => {
+                          const segBks = myBookings.filter(b =>
+                            b.segment_id === segment.id && EXPENSE_TYPES.includes(b.type) && b.price
+                          );
+                          // Build: { [currency]: { [type]: total } }
+                          const byCurType = {};
+                          segBks.forEach(b => {
+                            const cur = b.currency || "USD";
+                            const amt = parseFloat(b.price) || 0;
+                            if (!byCurType[cur]) byCurType[cur] = {};
+                            byCurType[cur][b.type] = (byCurType[cur][b.type] || 0) + amt;
+                          });
+                          const currencies = Object.keys(byCurType).sort();
+                          // Totals per currency
+                          const totals = {};
+                          currencies.forEach(cur => {
+                            totals[cur] = Object.values(byCurType[cur]).reduce((s, v) => s + v, 0);
+                          });
+                          const activeTypes = TYPES.filter(t =>
+                            EXPENSE_TYPES.includes(t.id) &&
+                            currencies.some(cur => byCurType[cur][t.id] > 0)
+                          );
+                          return (
+                            <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px 14px", background: "rgba(14,165,233,0.04)" }}>
+                              <div style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>costs · {segment.location}</div>
+                              {segBks.length === 0 ? (
+                                <div style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no expenses yet</div>
+                              ) : (
+                                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                  {/* Header row: currency columns */}
+                                  <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", paddingBottom: 6, borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
+                                    <div />
+                                    {currencies.map(cur => (
+                                      <div key={cur} style={{ fontSize: 9, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textAlign: "right", letterSpacing: "0.1em" }}>{cur}</div>
+                                    ))}
+                                  </div>
+                                  {/* Type rows */}
+                                  {activeTypes.map(t => (
+                                    <div key={t.id} style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                        <span style={{ fontSize: 11 }}>{t.icon}</span>
+                                        <span style={{ fontSize: 10, color: t.color, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" }}>{t.label}</span>
+                                      </div>
+                                      {currencies.map(cur => (
+                                        <div key={cur} style={{ fontSize: 11, color: byCurType[cur][t.id] ? "var(--text-muted)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textAlign: "right" }}>
+                                          {byCurType[cur][t.id] ? byCurType[cur][t.id].toFixed(0) : "–"}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ))}
+                                  {/* Total row */}
+                                  <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", padding: "7px 0 0", marginTop: 4, borderTop: "1px solid var(--border)" }}>
+                                    <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>total</div>
+                                    {currencies.map(cur => (
+                                      <div key={cur} style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace", textAlign: "right", fontWeight: 600 }}>
+                                        {totals[cur].toFixed(0)}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {!isCollapsed && (
                           <div style={{ position: "relative", padding: "14px 14px 14px 34px", display: "flex", flexDirection: "column", gap: 0 }}>
