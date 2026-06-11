@@ -551,6 +551,7 @@ export default function App() {
   }
 
   useEffect(() => { if (showSummary) fetchRates(); }, [showSummary]);
+  useEffect(() => { if (segmentExpenseOpen && !rates && !ratesLoading) fetchRates(); }, [segmentExpenseOpen]);
 
   // Fetch Unsplash vibe image for each location when trip tab opens
   useEffect(() => {
@@ -1505,60 +1506,53 @@ export default function App() {
                           const segBks = myBookings.filter(b =>
                             b.segment_id === segment.id && EXPENSE_TYPES.includes(b.type) && b.price
                           );
-                          // Build: { [currency]: { [type]: total } }
-                          const byCurType = {};
+                          const toDKK = (amt, cur) => {
+                            if (!cur || cur === "DKK") return amt;
+                            if (!rates?.rates?.[cur]) return null;
+                            return amt / rates.rates[cur];
+                          };
+                          // Per type: { total, approx }
+                          const byType = {};
+                          let grandTotal = 0, grandApprox = false;
                           segBks.forEach(b => {
-                            const cur = b.currency || "USD";
                             const amt = parseFloat(b.price) || 0;
-                            if (!byCurType[cur]) byCurType[cur] = {};
-                            byCurType[cur][b.type] = (byCurType[cur][b.type] || 0) + amt;
+                            const dkk = toDKK(amt, b.currency || "USD");
+                            if (!byType[b.type]) byType[b.type] = { total: 0, approx: false };
+                            if (dkk === null) { byType[b.type].approx = true; grandApprox = true; }
+                            else { byType[b.type].total += dkk; grandTotal += dkk; }
                           });
-                          const currencies = Object.keys(byCurType).sort();
-                          // Totals per currency
-                          const totals = {};
-                          currencies.forEach(cur => {
-                            totals[cur] = Object.values(byCurType[cur]).reduce((s, v) => s + v, 0);
-                          });
-                          const activeTypes = TYPES.filter(t =>
-                            EXPENSE_TYPES.includes(t.id) &&
-                            currencies.some(cur => byCurType[cur][t.id] > 0)
-                          );
+                          const activeTypes = TYPES.filter(t => EXPENSE_TYPES.includes(t.id) && byType[t.id]);
                           return (
                             <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px 14px", background: "rgba(14,165,233,0.04)" }}>
-                              <div style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10 }}>costs · {segment.location}</div>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                <div style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase" }}>costs · {segment.location}</div>
+                                <button className="btn" onClick={fetchRates} disabled={ratesLoading}
+                                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 9, fontFamily: "'Source Code Pro', monospace", padding: "1px 7px" }}>
+                                  {ratesLoading ? "…" : "↻ rates"}
+                                </button>
+                              </div>
                               {segBks.length === 0 ? (
                                 <div style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no expenses yet</div>
+                              ) : !rates && ratesLoading ? (
+                                <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>loading rates…</div>
                               ) : (
                                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                                  {/* Header row: currency columns */}
-                                  <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", paddingBottom: 6, borderBottom: "1px solid var(--border)", marginBottom: 4 }}>
-                                    <div />
-                                    {currencies.map(cur => (
-                                      <div key={cur} style={{ fontSize: 9, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textAlign: "right", letterSpacing: "0.1em" }}>{cur}</div>
-                                    ))}
-                                  </div>
-                                  {/* Type rows */}
                                   {activeTypes.map(t => (
-                                    <div key={t.id} style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
                                       <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                                         <span style={{ fontSize: 11 }}>{t.icon}</span>
                                         <span style={{ fontSize: 10, color: t.color, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" }}>{t.label}</span>
                                       </div>
-                                      {currencies.map(cur => (
-                                        <div key={cur} style={{ fontSize: 11, color: byCurType[cur][t.id] ? "var(--text-muted)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textAlign: "right" }}>
-                                          {byCurType[cur][t.id] ? byCurType[cur][t.id].toFixed(0) : "–"}
-                                        </div>
-                                      ))}
+                                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                        {byType[t.id].approx ? "~" : ""}{Math.round(byType[t.id].total)} DKK
+                                      </span>
                                     </div>
                                   ))}
-                                  {/* Total row */}
-                                  <div style={{ display: "grid", gridTemplateColumns: `120px repeat(${currencies.length}, 1fr)`, gap: "0 8px", padding: "7px 0 0", marginTop: 4, borderTop: "1px solid var(--border)" }}>
-                                    <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.08em", textTransform: "uppercase" }}>total</div>
-                                    {currencies.map(cur => (
-                                      <div key={cur} style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace", textAlign: "right", fontWeight: 600 }}>
-                                        {totals[cur].toFixed(0)}
-                                      </div>
-                                    ))}
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0 0", marginTop: 4, borderTop: "1px solid var(--border)" }}>
+                                    <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>total</span>
+                                    <span style={{ fontSize: 13, color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontWeight: 600 }}>
+                                      {grandApprox ? "~" : ""}{Math.round(grandTotal)} DKK
+                                    </span>
                                   </div>
                                 </div>
                               )}
