@@ -710,27 +710,13 @@ export default function App() {
     if (typeof window === "undefined") return;
 
     const { appUrl, webUrl } = mapTargets(b);
-    let fallbackTimer = null;
-    let cleanedUp = false;
 
-    const cleanup = () => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      if (fallbackTimer) clearTimeout(fallbackTimer);
-      document.removeEventListener("visibilitychange", onVisibilityChange);
-    };
+    // Use Android Intent URL so Chrome opens the app without navigating the
+    // browser tab. If Amap isn't installed, Chrome follows browser_fallback_url.
+    const intentUrl = appUrl.replace(/^androidamap:\/\//, "intent://") +
+      `#Intent;scheme=androidamap;package=com.autonavi.minimap;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
 
-    const onVisibilityChange = () => {
-      if (document.hidden) cleanup();
-    };
-
-    document.addEventListener("visibilitychange", onVisibilityChange);
-    fallbackTimer = setTimeout(() => {
-      cleanup();
-      window.location.href = webUrl;
-    }, 800);
-
-    window.location.href = appUrl;
+    window.location.href = intentUrl;
   }
 
   const showDateEnd = form.type === "hotel" || form.type === "activity" || form.type === "ticket";
