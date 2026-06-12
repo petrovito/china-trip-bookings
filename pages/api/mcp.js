@@ -540,7 +540,7 @@ async function query_bookings(args = {}) {
   return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${JSON.stringify(data, null, 1)}` }] };
 }
 
-
+async function list_bookings(args) {
   let query = supabase.from("bookings").select("*").order("date", { ascending: true });
   if (args?.type && args.type !== "all") query = query.eq("type", args.type);
   const { data, error } = await query;
