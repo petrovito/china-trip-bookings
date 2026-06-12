@@ -64,6 +64,37 @@ const SHARED_FIELDS = {
   paid_by:   { type: "string",  enum: ["peter", "friend"], description: "Who paid — omit if unpaid" },
 };
 
+// Shared per-booking patch fields, used by both update_booking (single) and
+// batch_update_bookings (array of these + id).
+const BOOKING_PATCH_FIELDS = {
+  type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport", "shopping"], description: "Optional new booking type" },
+  name:       { type: "string", description: "Booking name" },
+  date:       { type: "string", description: "Date in YYYY-MM-DD format" },
+  date_end:   { type: "string", description: "End date in YYYY-MM-DD format" },
+  time:       { type: "string", description: "Time in HH:MM format" },
+  time_end:   { type: "string", description: "End time in HH:MM format" },
+  origin:     { type: "string", description: "Departure city/airport" },
+  destination:{ type: "string", description: "Arrival city/destination" },
+  location:   { type: "string", description: "City, venue, or arrival destination" },
+  departs:    { type: "string", description: "Alias for time" },
+  arrives:    { type: "string", description: "Alias for time_end" },
+  check_in:   { type: "string", description: "Alias for hotel start date" },
+  check_out:  { type: "string", description: "Alias for hotel end date" },
+  check_in_time: { type: "string", description: "Alias for hotel start time" },
+  check_out_time:{ type: "string", description: "Alias for hotel end time" },
+  price:      { type: "number", description: "Price as a number" },
+  currency:   { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency" },
+  platform:   { type: "string", description: "Booking platform" },
+  reference:  { type: "string", description: "Booking reference or confirmation number" },
+  notes:      { type: "string", description: "Extra details" },
+  travelers:  { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for" },
+  paid_by:    { type: "string", enum: ["peter", "friend"], description: "Who paid" },
+  settled:    { type: "boolean", description: "Mark as settled or unsettled" },
+  map_query:  { type: "string", description: "Address or search keyword for the maps button — a full street address is most reliable (e.g. '长沙市芙蓉区车站中路193号')" },
+  map_lat:    { type: "number", description: "Latitude in GCJ-02 (Amap) coordinates" },
+  map_lng:    { type: "number", description: "Longitude in GCJ-02 (Amap) coordinates" },
+};
+
 const TOOLS = [
   // ── Typed tools (preferred) ──────────────────────────────────────────────
   {
@@ -171,35 +202,56 @@ const TOOLS = [
     inputSchema: {
       type: "object",
       properties: {
-        id:         { type: "string", description: "The UUID of the booking to update" },
-        type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport", "shopping"], description: "Optional new booking type" },
-        name:       { type: "string", description: "Booking name" },
-        date:       { type: "string", description: "Date in YYYY-MM-DD format" },
-        date_end:   { type: "string", description: "End date in YYYY-MM-DD format" },
-        time:       { type: "string", description: "Time in HH:MM format" },
-        time_end:   { type: "string", description: "End time in HH:MM format" },
-        origin:     { type: "string", description: "Departure city/airport" },
-        destination:{ type: "string", description: "Arrival city/destination" },
-        location:   { type: "string", description: "City, venue, or arrival destination" },
-        departs:    { type: "string", description: "Alias for time" },
-        arrives:    { type: "string", description: "Alias for time_end" },
-        check_in:   { type: "string", description: "Alias for hotel start date" },
-        check_out:  { type: "string", description: "Alias for hotel end date" },
-        check_in_time: { type: "string", description: "Alias for hotel start time" },
-        check_out_time:{ type: "string", description: "Alias for hotel end time" },
-        price:      { type: "number", description: "Price as a number" },
-        currency:   { type: "string", enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency" },
-        platform:   { type: "string", description: "Booking platform" },
-        reference:  { type: "string", description: "Booking reference or confirmation number" },
-        notes:      { type: "string", description: "Extra details" },
-        travelers:  { type: "string", enum: ["peter", "friend", "both"], description: "Who this is for" },
-        paid_by:    { type: "string", enum: ["peter", "friend"], description: "Who paid" },
-        settled:    { type: "boolean", description: "Mark as settled or unsettled" },
-        map_query:  { type: "string", description: "Address or search keyword for the maps button — a full street address is most reliable (e.g. '长沙市芙蓉区车站中路193号')" },
-        map_lat:    { type: "number", description: "Latitude in GCJ-02 (Amap) coordinates" },
-        map_lng:    { type: "number", description: "Longitude in GCJ-02 (Amap) coordinates" },
+        id: { type: "string", description: "The UUID of the booking to update" },
+        ...BOOKING_PATCH_FIELDS,
       },
       required: ["id"],
+    },
+  },
+  {
+    name: "batch_update_bookings",
+    description: "Apply a different patch of fields to each of several bookings in one call. Far more efficient than calling update_booking repeatedly — use this whenever updating 2+ bookings (e.g. backfilling map_query/map_lat/map_lng for several hotels, bulk-marking settled, fixing references).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        updates: {
+          type: "array",
+          minItems: 1,
+          maxItems: 50,
+          description: "One entry per booking to update",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string", description: "The UUID of the booking to update" },
+              ...BOOKING_PATCH_FIELDS,
+            },
+            required: ["id"],
+          },
+        },
+      },
+      required: ["updates"],
+    },
+  },
+  {
+    name: "query_bookings",
+    description: "Flexible read access to booking records, returning full raw JSON for every column (including map_query, map_lat, map_lng, map_provider, pass_code, segment_id, settled, etc — fields not shown by list_bookings). Use this to audit data, find records missing a field (e.g. has_map=false), look up specific bookings by id, or fetch only the columns you need for an efficient bulk check.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        type:       { type: "string", enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport", "shopping"], description: "Filter by booking type — omit for all" },
+        location:   { type: "string", description: "Filter by location (case-insensitive partial match)" },
+        date_from:  { type: "string", description: "Only bookings with date >= this (YYYY-MM-DD)" },
+        date_to:    { type: "string", description: "Only bookings with date <= this (YYYY-MM-DD)" },
+        settled:    { type: "boolean", description: "Filter by settled status" },
+        paid_by:    { type: "string", enum: ["peter", "friend"], description: "Filter by who paid" },
+        travelers:  { type: "string", enum: ["peter", "friend", "both"], description: "Filter by who the booking is for" },
+        segment_id: { type: "string", description: "Filter by segment UUID, or 'none' for unassigned bookings" },
+        has_map:    { type: "boolean", description: "true = map_query or map_lat/map_lng is set; false = both are missing" },
+        ids:        { type: "array", items: { type: "string" }, description: "Fetch specific bookings by UUID" },
+        search:     { type: "string", description: "Case-insensitive search across name, notes, location, and reference" },
+        fields:     { type: "array", items: { type: "string" }, description: "Specific columns to return, e.g. ['id','name','map_query','map_lat','map_lng'] — omit for all columns" },
+        limit:      { type: "number", description: "Max rows to return" },
+      },
     },
   },
   {
@@ -439,7 +491,56 @@ async function update_booking(args) {
   }
 }
 
-async function list_bookings(args) {
+async function batch_update_bookings(args) {
+  const updates = args?.updates;
+  if (!Array.isArray(updates) || !updates.length)
+    return { isError: true, content: [{ type: "text", text: "Error: 'updates' must be a non-empty array of {id, ...fields}." }] };
+
+  const results = [];
+  for (const u of updates) {
+    const { id, ...changes } = u || {};
+    if (!id) { results.push(`✗ missing id`); continue; }
+    try {
+      const data = await updateBookingRecord("generic", id, changes);
+      results.push(`✓ ${data.name} (${data.id})`);
+    } catch (error) {
+      results.push(`✗ ${id}: ${error.message}`);
+    }
+  }
+  return { content: [{ type: "text", text: `Processed ${updates.length} update(s):\n\n${results.join("\n")}` }] };
+}
+
+async function query_bookings(args = {}) {
+  const { type, location, date_from, date_to, settled, paid_by, travelers, segment_id, has_map, ids, search, fields, limit } = args;
+
+  let query = supabase.from("bookings").select(Array.isArray(fields) && fields.length ? fields.join(",") : "*")
+    .order("date", { ascending: true });
+
+  if (type) query = query.eq("type", type);
+  if (location) query = query.ilike("location", `%${location}%`);
+  if (date_from) query = query.gte("date", date_from);
+  if (date_to) query = query.lte("date", date_to);
+  if (settled !== undefined) query = query.eq("settled", settled);
+  if (paid_by) query = query.eq("paid_by", paid_by);
+  if (travelers) query = query.eq("travelers", travelers);
+  if (segment_id === "none") query = query.is("segment_id", null);
+  else if (segment_id) query = query.eq("segment_id", segment_id);
+  if (Array.isArray(ids) && ids.length) query = query.in("id", ids);
+  if (search) {
+    const s = `%${search}%`;
+    query = query.or(`name.ilike.${s},notes.ilike.${s},location.ilike.${s},reference.ilike.${s}`);
+  }
+  if (has_map === true) query = query.or("map_query.not.is.null,map_lat.not.is.null");
+  if (has_map === false) query = query.is("map_query", null).is("map_lat", null);
+  if (limit) query = query.limit(limit);
+
+  const { data, error } = await query;
+  if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
+  if (!data.length) return { content: [{ type: "text", text: "No bookings matched." }] };
+  return { content: [{ type: "text", text: `${data.length} booking(s):\n\n${JSON.stringify(data, null, 1)}` }] };
+}
+
+
   let query = supabase.from("bookings").select("*").order("date", { ascending: true });
   if (args?.type && args.type !== "all") query = query.eq("type", args.type);
   const { data, error } = await query;
@@ -592,7 +693,7 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Mcp-Session-Id");
   if (req.method === "OPTIONS") return res.status(204).end();
-  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "2.0.0" });
+  if (req.method === "GET") return res.json({ status: "ok", name: "china-trip-bookings", version: "2.1.0" });
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   let body;
@@ -602,7 +703,7 @@ export default async function handler(req, res) {
   const { id, method, params } = body;
 
   if (method === "initialize") {
-    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "2.0.0" } } });
+    return res.json({ jsonrpc: "2.0", id, result: { protocolVersion: "2024-11-05", capabilities: { tools: {} }, serverInfo: { name: "china-trip-bookings", version: "2.1.0" } } });
   }
   if (method === "tools/list") {
     return res.json({ jsonrpc: "2.0", id, result: { tools: TOOLS } });
@@ -611,7 +712,7 @@ export default async function handler(req, res) {
     const { name, arguments: args } = params;
     const handlers = {
       add_transport, add_accommodation, add_experience,
-      add_booking, list_bookings, settle_booking, delete_booking, update_booking, set_pass,
+      add_booking, list_bookings, query_bookings, settle_booking, delete_booking, update_booking, batch_update_bookings, set_pass,
       list_segments, create_segment, update_segment, delete_segment, assign_segment,
       add_todo, list_todos, complete_todo, delete_todo,
     };
