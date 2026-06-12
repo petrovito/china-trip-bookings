@@ -672,6 +672,7 @@ export default function App() {
   }
 
   function mapSearchText(b) {
+    if (b.map_query) return b.map_query;
     if (b.type === "flight") {
       return b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name;
     }
