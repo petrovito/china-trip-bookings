@@ -135,6 +135,53 @@ function fmtDateShort(dateStr) {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+// ── Offline cache ──
+// Every fetched resource (bookings, todos, segments, ...) is mirrored to
+// localStorage in a single standard envelope: { v: CACHE_VERSION, ts, data }.
+// fetchWithCache() is the one place that knows how to read/write this format,
+// so each resource's fetch function just provides a URL, a cache key, and a
+// setter — no per-resource caching logic to duplicate or drift.
+const CACHE_VERSION = 1;
+
+function cacheRead(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || parsed.v !== CACHE_VERSION || !("data" in parsed)) return null;
+    return parsed; // { v, ts, data }
+  } catch { return null; }
+}
+
+function cacheWrite(key, data) {
+  try {
+    localStorage.setItem(key, JSON.stringify({ v: CACHE_VERSION, ts: Date.now(), data }));
+  } catch {}
+}
+
+// Fetch `url`, pass the JSON result to `setter`, and cache it under `key`.
+// On failure, fall back to the cached copy (if any) and report that the
+// data is stale so the UI can show an offline indicator.
+async function fetchWithCache(url, key, setter, { fallback = [] } = {}) {
+  try {
+    const res = await fetch(url);
+    const text = await res.text();
+    if (!res.ok) throw new Error(`${res.status}: ${text}`);
+    const data = JSON.parse(text);
+    setter(data);
+    cacheWrite(key, data);
+    return { ok: true };
+  } catch (e) {
+    const cached = cacheRead(key);
+    if (cached) {
+      setter(cached.data);
+      return { ok: false, cached: true, cachedAt: cached.ts, error: e };
+    }
+    setter(fallback);
+    return { ok: false, cached: false, error: e };
+  }
+}
+
 export default function App() {
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -147,6 +194,8 @@ export default function App() {
   const [editId, setEditId] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [offline, setOffline] = useState(false);
+  const [cachedAt, setCachedAt] = useState(null);
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [activeTab, setActiveTab] = useState("trip");
   const [writeToken, setWriteToken] = useState("");
@@ -244,42 +293,26 @@ export default function App() {
 
   async function fetchBookings() {
     setLoading(true); setError(null);
-    try {
-      const res = await fetch("/api/bookings");
-      const text = await res.text();
-      if (!res.ok) throw new Error(`${res.status}: ${text}`);
-      const data = JSON.parse(text);
-      const list = Array.isArray(data) ? data : [];
-      setBookings(list);
-      localStorage.setItem("bookings_cache", JSON.stringify(list));
-    } catch (e) {
-      const cached = localStorage.getItem("bookings_cache");
-      if (cached) { try { setBookings(JSON.parse(cached)); } catch {} }
-      else { setError(e.message); setBookings([]); }
-    } finally { setLoading(false); }
+    const result = await fetchWithCache("/api/bookings", "bookings_cache",
+      (data) => setBookings(Array.isArray(data) ? data : []));
+    if (result.ok) {
+      setOffline(false); setCachedAt(null);
+    } else if (result.cached) {
+      setOffline(true); setCachedAt(result.cachedAt);
+    } else {
+      setOffline(false); setError(result.error.message);
+    }
+    setLoading(false);
   }
 
   async function fetchTodos() {
-    try {
-      const res = await fetch("/api/todos");
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : [];
-      setTodos(list);
-      localStorage.setItem("todos_cache", JSON.stringify(list));
-    } catch {
-      const cached = localStorage.getItem("todos_cache");
-      if (cached) try { setTodos(JSON.parse(cached)); } catch {}
-    }
+    await fetchWithCache("/api/todos", "todos_cache",
+      (data) => setTodos(Array.isArray(data) ? data : []));
   }
 
   async function fetchSegments() {
-    try {
-      const res = await fetch("/api/segments");
-      const data = await res.json();
-      setSegments(Array.isArray(data) ? data : []);
-    } catch {
-      // non-fatal — trip tab degrades gracefully
-    }
+    await fetchWithCache("/api/segments", "segments_cache",
+      (data) => setSegments(Array.isArray(data) ? data : []));
   }
 
   async function handleAddTodo() {
@@ -292,39 +325,39 @@ export default function App() {
         { ...todoForm, assignee: "peter",  id: `tmp-${t}-1`, done: false },
         { ...todoForm, assignee: "friend", id: `tmp-${t}-2`, done: false },
       ];
-      setTodos(prev => { const u = [...prev, tmp1, tmp2]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      setTodos(prev => { const u = [...prev, tmp1, tmp2]; cacheWrite("todos_cache", u); return u; });
       reset(); showToast("2 todos added — one each");
       const [r1, r2] = await Promise.all(
         ["peter", "friend"].map(a => fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify({ ...todoForm, assignee: a }) }))
       );
       if (r1.status === 401 || r2.status === 401) {
-        setTodos(prev => { const u = prev.filter(t => t.id !== tmp1.id && t.id !== tmp2.id); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+        setTodos(prev => { const u = prev.filter(t => t.id !== tmp1.id && t.id !== tmp2.id); cacheWrite("todos_cache", u); return u; });
         showToast("Wrong password", false); return;
       }
       const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
-      setTodos(prev => { const u = prev.map(t => t.id === tmp1.id ? d1 : t.id === tmp2.id ? d2 : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      setTodos(prev => { const u = prev.map(t => t.id === tmp1.id ? d1 : t.id === tmp2.id ? d2 : t); cacheWrite("todos_cache", u); return u; });
       return;
     }
 
     const tmpId = `tmp-${Date.now()}`;
     const tmpTodo = { ...todoForm, id: tmpId, done: false };
-    setTodos(prev => { const u = [...prev, tmpTodo]; localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodos(prev => { const u = [...prev, tmpTodo]; cacheWrite("todos_cache", u); return u; });
     reset(); showToast("Todo added");
     const res = await fetch("/api/todos", { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
     if (res.status === 401) {
-      setTodos(prev => { const u = prev.filter(t => t.id !== tmpId); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      setTodos(prev => { const u = prev.filter(t => t.id !== tmpId); cacheWrite("todos_cache", u); return u; });
       showToast("Wrong password", false); return;
     }
     const todo = await res.json();
-    setTodos(prev => { const u = prev.map(t => t.id === tmpId ? todo : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === tmpId ? todo : t); cacheWrite("todos_cache", u); return u; });
   }
 
   async function handleToggleTodo(todo) {
     const updated = { ...todo, done: !todo.done };
-    setTodos(prev => { const u = prev.map(t => t.id === todo.id ? updated : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === todo.id ? updated : t); cacheWrite("todos_cache", u); return u; });
     const res = await fetch(`/api/todos/${todo.id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ done: !todo.done }) });
     if (res.status === 401) {
-      setTodos(prev => { const u = prev.map(t => t.id === todo.id ? todo : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+      setTodos(prev => { const u = prev.map(t => t.id === todo.id ? todo : t); cacheWrite("todos_cache", u); return u; });
       showToast("Wrong password", false);
     }
   }
@@ -332,7 +365,7 @@ export default function App() {
   async function handleDeleteTodo(id) {
     const res = await fetch(`/api/todos/${id}`, { method: "DELETE", headers: authedHeaders });
     if (res.status === 401) { showToast("Wrong password", false); return; }
-    setTodos(prev => { const u = prev.filter(t => t.id !== id); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodos(prev => { const u = prev.filter(t => t.id !== id); cacheWrite("todos_cache", u); return u; });
     showToast("Todo deleted");
   }
 
@@ -341,7 +374,7 @@ export default function App() {
     const { id, title, category, assignee, deadline } = editingTodo;
     const res = await fetch(`/api/todos/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ title, category, assignee, deadline: deadline || null }) });
     if (res.status === 401) { showToast("Wrong password", false); return; }
-    setTodos(prev => { const u = prev.map(t => t.id === id ? { ...t, title, category, assignee } : t); localStorage.setItem("todos_cache", JSON.stringify(u)); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === id ? { ...t, title, category, assignee } : t); cacheWrite("todos_cache", u); return u; });
     setEditingTodo(null);
     showToast("Todo updated");
   }
@@ -417,7 +450,7 @@ export default function App() {
       if (res.status === 401) { showToast("Wrong password", false); return; }
       setBookings(prev => {
         const updated = prev.map(bk => bk.id === b.id ? { ...bk, passes: newPasses } : bk);
-        localStorage.setItem("bookings_cache", JSON.stringify(updated));
+        cacheWrite("bookings_cache", updated);
         return updated;
       });
       const myPasses = newPasses.filter(p => p.who === who);
@@ -444,7 +477,7 @@ export default function App() {
     if (res.status === 401) { showToast("Wrong password", false); return; }
     setBookings(prev => {
       const updated = prev.map(bk => bk.id === bookingId ? { ...bk, passes: newPasses } : bk);
-      localStorage.setItem("bookings_cache", JSON.stringify(updated));
+      cacheWrite("bookings_cache", updated);
       return updated;
     });
     setPassViewer(null);
@@ -998,6 +1031,12 @@ export default function App() {
                   {saving ? "Saving..." : editId ? "Save changes" : "Add booking"}
                 </button>
               </div>
+            </div>
+          )}
+
+          {offline && (
+            <div style={{ background: "var(--surface)", border: "1px solid var(--border)", borderRadius: 8, padding: "10px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "var(--text-muted)" }}>
+              📡 Offline — showing cached data{cachedAt ? ` from ${new Date(cachedAt).toLocaleString()}` : ""}
             </div>
           )}
 
