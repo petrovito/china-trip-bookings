@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   type: "flight", name: "", date: "", date_end: "", price: "", currency: "USD",
   platform: "", reference: "", notes: "", travelers: "both", paid_by: "", location: "",
   time: "", time_end: "", origin: "", subtype: "",
+  detail_car: "", detail_seat_peter: "", detail_seat_friend: "", detail_gate: "", detail_code: "", detail_room: "",
   reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
@@ -51,6 +52,29 @@ function parseSubtype(notes) {
 function encodeSubtype(subtype, notes) {
   const clean = (notes || "").replace(/^\[(taxi|bus|metro|other)\] ?/, "");
   return subtype ? `[${subtype}] ${clean}`.trim() : clean;
+}
+
+// Structured "details" jsonb — keys shown as highlighted pills (when present),
+// plus a "ⓘ details" button revealing everything in a modal. Any key is allowed;
+// these just get nicer labels and pill treatment.
+const DETAIL_LABELS = {
+  car: "Car",
+  seat: "Seat",
+  seat_peter: "Seat (Peter)",
+  seat_friend: `Seat (${FRIEND_NAME})`,
+  gate: "Gate",
+  code: "Code",
+  room: "Room",
+};
+const PINNED_DETAIL_KEYS = ["car", "seat", "seat_peter", "seat_friend", "room", "gate"];
+function detailLabel(key) {
+  return DETAIL_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+}
+// Which detail_* form fields are relevant for a given booking type
+function detailFieldsForType(type) {
+  if (type === "flight" || type === "train") return ["car", "seat_peter", "seat_friend", "gate", "code"];
+  if (type === "hotel") return ["room"];
+  return [];
 }
 
 // ZXing format string → bwip-js bcid
@@ -133,6 +157,7 @@ export default function App() {
   const [rates, setRates] = useState(null);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [expandedCards, setExpandedCards] = useState({});
+  const [detailsModal, setDetailsModal] = useState(null); // booking object, shows full `details` + address
   const [collapsedGroups, setCollapsedGroups] = useState({});
   const [segments, setSegments] = useState([]);
   const [locationImages, setLocationImages] = useState({});
@@ -437,6 +462,11 @@ export default function App() {
     // Transport name is auto-generated server-side; other types require a name
     if (!form.name && !isTransport) return;
     setSaving(true);
+    const detailKeys = detailFieldsForType(form.type);
+    const detailEntries = detailKeys
+      .map(k => [k, (form[`detail_${k}`] || "").trim()])
+      .filter(([, v]) => v);
+    const details = detailEntries.length ? Object.fromEntries(detailEntries) : null;
     const payload = {
       ...form,
       price: form.price ? parseFloat(form.price) : null,
@@ -448,6 +478,7 @@ export default function App() {
       time_end: form.time_end || null,
       origin: form.origin || null,
       notes: form.type === "city_transport" ? (encodeSubtype(form.subtype, form.notes) || null) : (form.notes || null),
+      details,
     };
     const base = apiBase(form.type);
     if (editId) {
@@ -511,6 +542,8 @@ export default function App() {
         : { notes: b.notes || "", subtype: "" }),
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
       time: b.time || "", time_end: b.time_end || "", origin,
+      detail_car: b.details?.car || "", detail_seat_peter: b.details?.seat_peter || "", detail_seat_friend: b.details?.seat_friend || "",
+      detail_gate: b.details?.gate || "", detail_code: b.details?.code || "", detail_room: b.details?.room || "",
       reminder: false, reminderType: "buy", reminderAssignee: "me",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
@@ -892,6 +925,18 @@ export default function App() {
                 <div style={{ gridColumn: "1 / -1" }}>
                   <input placeholder="Reference / confirmation #" value={form.reference} onChange={e => setForm(f => ({ ...f, reference: e.target.value }))} style={inp} />
                 </div>
+                {detailFieldsForType(form.type).length > 0 && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <div style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 4 }}>Extras (shown as highlights)</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {detailFieldsForType(form.type).map(k => (
+                        <input key={k} placeholder={detailLabel(k)} value={form[`detail_${k}`]}
+                          onChange={e => setForm(f => ({ ...f, [`detail_${k}`]: e.target.value }))}
+                          style={{ ...inp, flex: "1 1 110px" }} />
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {form.type !== "activity" && (
                   <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>Travelers</span>
@@ -1083,6 +1128,12 @@ export default function App() {
                           {b.type !== "activity" && (b.paid_by ? <Meta label="paid by" value={b.paid_by === "friend" ? FRIEND_NAME : b.paid_by} /> : <Meta label="paid by" value="—" />)}
                         </div>
                         {(() => { const n = b.type === "city_transport" ? parseSubtype(b.notes).cleanNotes : b.notes; return n ? <div style={{ marginTop: 8, fontSize: 12.5, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{n}</div> : null; })()}
+                        <DetailPills booking={b} onOpenModal={() => setDetailsModal(b)} />
+                        {b.map_query && (
+                          <div style={{ marginTop: 8 }}>
+                            <CopyButton text={b.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} />
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -1383,7 +1434,7 @@ export default function App() {
                       const t = TYPES.find(tt => tt.id === b.type) || TYPES[0];
                       const isPastTransit = (b.date || "") < today;
                       const isExpanded = expandedCards[b.id];
-                      const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin;
+                      const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin || b.details;
                       const myPasses = getBookingPasses(b).filter(p => p.who === identity);
                       const hasPasses = getBookingPasses(b).length > 0;
                       const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
@@ -1413,8 +1464,10 @@ export default function App() {
                                 {b.reference && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
                                 {b.platform && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
                                 {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
+                                <DetailPills booking={b} onOpenModal={() => setDetailsModal(b)} />
                                 <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
                                   <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => openMapsLink(e, b)}>📍 maps</a>
+                                  <CopyButton text={b.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} />
                                   {platformLink(b) && <a href={platformLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>↗ {b.platform}</a>}
                                   {canWrite && PASS_TYPES.includes(b.type) && (
                                     <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
@@ -1571,6 +1624,11 @@ export default function App() {
                                   <a href={mapsLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
                                     style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
                                     onClick={e => openMapsLink(e, hotelBooking)}>map ↗</a>
+                                  <CopyButton text={hotelBooking.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} style={{ fontSize: 10, padding: "2px 7px" }} />
+                                  {hotelBooking.details && Object.values(hotelBooking.details).some(Boolean) && (
+                                    <button className="btn" onClick={e => { e.stopPropagation(); setDetailsModal(hotelBooking); }}
+                                      style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px", background: "transparent" }}>ⓘ</button>
+                                  )}
                                   {platformLink(hotelBooking) && (
                                     <a href={platformLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
                                       style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
@@ -1627,7 +1685,7 @@ export default function App() {
                                   {otherBks.map(b => {
                                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                                     const isExpanded = expandedCards[b.id];
-                                    const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin;
+                                    const hasDetails = b.reference || b.platform || b.notes || b.price || b.time || b.origin || b.details;
                                     const myPasses = getBookingPasses(b).filter(p => p.who === identity);
                                     const hasPasses = getBookingPasses(b).length > 0;
                                     const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
@@ -1692,10 +1750,12 @@ export default function App() {
                                               </div>
                                             )}
                                             {(() => { const n = b.type === "city_transport" ? parseSubtype(b.notes).cleanNotes : b.notes; return n ? <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{n}</div> : null; })()}
+                                            <DetailPills booking={b} onOpenModal={() => setDetailsModal(b)} />
                                             <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
                                               <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
                                                 style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
                                                 onClick={e => openMapsLink(e, b)}>📍 maps</a>
+                                              <CopyButton text={b.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} />
                                               {platformLink(b) && (
                                                 <a href={platformLink(b)} target="_blank" rel="noopener noreferrer"
                                                   style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
@@ -1811,6 +1871,41 @@ export default function App() {
                   })}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── DETAILS MODAL (seat/car/gate/room + address) ── */}
+          {detailsModal && (
+            <div onClick={() => setDetailsModal(null)}
+              style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}>
+              <div onClick={e => e.stopPropagation()}
+                style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 22px", maxWidth: 340, width: "90%", border: "1px solid var(--border)" }}>
+                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, marginBottom: 14, color: "var(--text)" }}>{detailsModal.name}</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {Object.entries(detailsModal.details || {}).filter(([, v]) => v).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>{detailLabel(k)}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, color: "var(--text)", fontFamily: "'Source Code Pro', monospace" }}>{v}</span>
+                        <CopyButton text={String(v)} onCopy={ok => showToast(ok ? "Copied" : "Copy failed", ok)} />
+                      </span>
+                    </div>
+                  ))}
+                  {detailsModal.map_query && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, paddingTop: 12, borderTop: "1px solid var(--border)" }}>
+                      <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>Address</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, color: "var(--text)", fontFamily: "'Georgia', serif", textAlign: "right" }}>{detailsModal.map_query}</span>
+                        <CopyButton text={detailsModal.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} />
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <button className="btn" onClick={() => setDetailsModal(null)}
+                  style={{ marginTop: 18, width: "100%", padding: "9px 0", borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>
+                  Close
+                </button>
+              </div>
             </div>
           )}
 
@@ -2211,6 +2306,43 @@ export default function App() {
         style={{ display: "none" }}
       />
     </>
+  );
+}
+
+function CopyButton({ text, onCopy, title = "Copy address", style }) {
+  if (!text) return null;
+  return (
+    <button className="btn" onClick={e => {
+      e.preventDefault(); e.stopPropagation();
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => onCopy?.(true), () => onCopy?.(false));
+      } else { onCopy?.(false); }
+    }}
+      title={title}
+      style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px", background: "transparent", lineHeight: 1, ...style }}>
+      📋
+    </button>
+  );
+}
+
+// Highlighted "extras" pills (seat/car/gate/room etc) + a button opening the full details modal
+function DetailPills({ booking, onOpenModal }) {
+  const details = booking.details;
+  const hasDetails = details && typeof details === "object" && Object.values(details).some(Boolean);
+  if (!hasDetails) return null;
+  const pinned = PINNED_DETAIL_KEYS.filter(k => details[k]);
+  return (
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 4 }}>
+      {pinned.map(k => (
+        <span key={k} style={{ fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", background: "var(--accent)18", border: "1px solid var(--accent)40", borderRadius: 4, padding: "2px 8px" }}>
+          {detailLabel(k)}: <b>{details[k]}</b>
+        </span>
+      ))}
+      <button className="btn" onClick={e => { e.preventDefault(); e.stopPropagation(); onOpenModal(); }}
+        style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 8px", background: "transparent" }}>
+        ⓘ details
+      </button>
+    </div>
   );
 }
 

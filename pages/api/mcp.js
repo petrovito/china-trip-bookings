@@ -62,6 +62,7 @@ const SHARED_FIELDS = {
   notes:     { type: "string",  description: "Extra details" },
   travelers: { type: "string",  enum: ["peter", "friend", "both"], description: "Who this is for — defaults to both" },
   paid_by:   { type: "string",  enum: ["peter", "friend"], description: "Who paid — omit if unpaid" },
+  details:   { type: "object",  description: "Structured extras shown as highlighted pills + a details modal. Common keys: car (train car number), seat_peter / seat_friend (per-traveler seat — use 'seat' instead if shared), gate (boarding/ticket gate), code (collection/pickup code), room (hotel room number). Any keys allowed; set at insertion time when known." },
 };
 
 // Shared per-booking patch fields, used by both update_booking (single) and
@@ -93,6 +94,7 @@ const BOOKING_PATCH_FIELDS = {
   map_query:  { type: "string", description: "Address or search keyword for the maps button — a full street address is most reliable (e.g. '长沙市芙蓉区车站中路193号')" },
   map_lat:    { type: "number", description: "Latitude in GCJ-02 (Amap) coordinates" },
   map_lng:    { type: "number", description: "Longitude in GCJ-02 (Amap) coordinates" },
+  details:    { type: "object", description: "Structured extras shown as highlighted pills + a details modal. Common keys: car, seat_peter, seat_friend (or 'seat' if shared), gate, code, room. Any keys allowed. Pass null to clear." },
 };
 
 const TOOLS = [
@@ -369,7 +371,7 @@ const TOOLS = [
 // ── Tool implementations ───────────────────────────────────────────────────
 
 async function add_transport(args) {
-  const { type, origin, destination, date, departs, arrives, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const { type, origin, destination, date, departs, arrives, price, currency, platform, reference, notes, travelers, paid_by, details } = args;
   const name = `${origin} → ${destination}`;
   const { data, error } = await supabase
     .from("bookings")
@@ -388,6 +390,7 @@ async function add_transport(args) {
       notes:     notes       || null,
       travelers: travelers   || "both",
       paid_by:   paid_by     || null,
+      details:   details     ?? null,
       segment_id: null,
     })
     .select().single();
@@ -396,7 +399,7 @@ async function add_transport(args) {
 }
 
 async function add_accommodation(args) {
-  const { name, location, check_in, check_out, check_in_time, check_out_time, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const { name, location, check_in, check_out, check_in_time, check_out_time, price, currency, platform, reference, notes, travelers, paid_by, details } = args;
   const segment_id = await getOrCreateSegment("hotel", location, check_in ?? null);
   const { data, error } = await supabase
     .from("bookings")
@@ -415,6 +418,7 @@ async function add_accommodation(args) {
       notes:     notes          || null,
       travelers: travelers      || "both",
       paid_by:   paid_by        || null,
+      details:   details        ?? null,
       segment_id,
     })
     .select().single();
@@ -423,7 +427,7 @@ async function add_accommodation(args) {
 }
 
 async function add_experience(args) {
-  const { type, name, date, time, location, price, currency, platform, reference, notes, travelers, paid_by } = args;
+  const { type, name, date, time, location, price, currency, platform, reference, notes, travelers, paid_by, details } = args;
   const segment_id = await getOrCreateSegment(type, location, date ?? null);
   const { data, error } = await supabase
     .from("bookings")
@@ -440,6 +444,7 @@ async function add_experience(args) {
       notes:     notes     || null,
       travelers: travelers || "both",
       paid_by:   paid_by   || null,
+      details:   details   ?? null,
       segment_id,
     })
     .select().single();
@@ -467,6 +472,7 @@ async function add_booking(args) {
       notes:     args.notes     ?? null,
       travelers: args.travelers ?? "both",
       paid_by:   args.paid_by   ?? null,
+      details:   args.details   ?? null,
       segment_id,
     })
     .select().single();

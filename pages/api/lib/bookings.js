@@ -34,6 +34,16 @@ function pickNonEmpty(...values) {
   return undefined;
 }
 
+// `details` is a free-form jsonb object (e.g. { car, seat_peter, seat_friend, gate, code, room }).
+// Treat null/"" as an explicit clear; undefined means "leave as-is".
+function pickDetails(body = {}, existing = {}) {
+  if (body.details !== undefined) {
+    if (body.details === null || body.details === "") return null;
+    return body.details;
+  }
+  return existing.details ?? null;
+}
+
 function reminderAssignees(body = {}) {
   if (body.reminderAssignee === "both") return ["peter", "friend"];
   if (body.reminderAssignee === "peter" || body.reminderAssignee === "friend") return [body.reminderAssignee];
@@ -69,6 +79,7 @@ function baseBookingFields(body = {}, existing = {}) {
     map_query: toNull(pick(body.map_query, existing.map_query)),
     map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
     map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
+    details: pickDetails(body, existing),
   };
 }
 
@@ -115,6 +126,7 @@ function buildAccommodationPayload(body = {}, existing = {}, { forInsert = false
     map_query: toNull(pick(body.map_query, existing.map_query)),
     map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
     map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
+    details: pickDetails(body, existing),
   };
 
   if (body.settled !== undefined) payload.settled = body.settled;
@@ -143,6 +155,7 @@ function buildExperiencePayload(body = {}, existing = {}, { forInsert = false } 
     map_query: toNull(pick(body.map_query, existing.map_query)),
     map_lat: body.map_lat !== undefined ? (body.map_lat === null ? null : Number(body.map_lat)) : (existing.map_lat ?? null),
     map_lng: body.map_lng !== undefined ? (body.map_lng === null ? null : Number(body.map_lng)) : (existing.map_lng ?? null),
+    details: pickDetails(body, existing),
   };
 
   if (body.settled !== undefined) payload.settled = body.settled;
