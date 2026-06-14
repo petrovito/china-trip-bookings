@@ -54,6 +54,18 @@ async function getOrCreateSegment(type, location, bookingDate = null) {
   return _createNewSegment(loc);
 }
 
+// Enforces segment resolution for non-transit bookings.
+// Returns segment_id (null for transit types is valid), or throws with a descriptive message.
+async function resolveSegmentStrict(type, location, date) {
+  if (TRANSIT_TYPES.includes(type)) return null;
+  if (!location?.trim())
+    throw new Error(`type "${type}" requires a location for segment assignment — provide a city name`);
+  const seg = await getOrCreateSegment(type, location, date ?? null);
+  if (seg === null)
+    throw new Error(`could not resolve or create a segment for location "${location.trim()}" — check DB connectivity`);
+  return seg;
+}
+
 const SHARED_FIELDS = {
   price:     { type: "number",  description: "Price as a number — omit for free activities" },
   currency:  { type: "string",  enum: ["USD", "CNY", "EUR", "KRW", "VND", "DKK"], description: "Currency — defaults to USD" },
@@ -235,6 +247,47 @@ const TOOLS = [
     },
   },
   {
+    name: "bulk_add_bookings",
+    description: "Insert multiple bookings in a single call. Segment assignment is automatic and enforced — non-transit bookings without a location are rejected before anything is written. All rows are inserted atomically after segment resolution succeeds for every item. Prefer this over repeated add_transport / add_accommodation / add_experience calls whenever inserting 2+ bookings at once.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        bookings: {
+          type: "array",
+          minItems: 1,
+          maxItems: 50,
+          description: "Ordered list of bookings to insert",
+          items: {
+            type: "object",
+            properties: {
+              type:           { type: "string",  enum: ["flight", "hotel", "train", "ticket", "food", "activity", "city_transport", "shopping"], description: "Booking type — determines how other fields are interpreted" },
+              name:           { type: "string",  description: "Booking name — for transport omit to auto-generate 'origin → destination'" },
+              location:       { type: "string",  description: "City — required for all non-transit types (used for automatic segment assignment)" },
+              origin:         { type: "string",  description: "Departure city/airport — flights and trains" },
+              destination:    { type: "string",  description: "Arrival city/airport — flights and trains" },
+              departs:        { type: "string",  description: "Departure time HH:MM — alias for time" },
+              arrives:        { type: "string",  description: "Arrival time HH:MM — alias for time_end" },
+              check_in:       { type: "string",  description: "Check-in date YYYY-MM-DD — alias for date" },
+              check_out:      { type: "string",  description: "Check-out date YYYY-MM-DD — alias for date_end" },
+              check_in_time:  { type: "string",  description: "Check-in time HH:MM" },
+              check_out_time: { type: "string",  description: "Check-out time HH:MM" },
+              date:           { type: "string",  description: "Start date YYYY-MM-DD" },
+              date_end:       { type: "string",  description: "End date YYYY-MM-DD" },
+              time:           { type: "string",  description: "Start time HH:MM" },
+              time_end:       { type: "string",  description: "End time HH:MM" },
+              map_query:      { type: "string",  description: "Chinese address for Amap deep-link, e.g. '长沙市芙蓉区车站中路193号'" },
+              map_lat:        { type: "number",  description: "GCJ-02 latitude" },
+              map_lng:        { type: "number",  description: "GCJ-02 longitude" },
+              ...SHARED_FIELDS,
+            },
+            required: ["type"],
+          },
+        },
+      },
+      required: ["bookings"],
+    },
+  },
+  {
     name: "query_bookings",
     description: "Flexible read access to booking records, returning full raw JSON for every column (including map_query, map_lat, map_lng, map_provider, pass_code, segment_id, settled, etc — fields not shown by list_bookings). Use this to audit data, find records missing a field (e.g. has_map=false), look up specific bookings by id, or fetch only the columns you need for an efficient bulk check.",
     inputSchema: {
@@ -400,7 +453,9 @@ async function add_transport(args) {
 
 async function add_accommodation(args) {
   const { name, location, check_in, check_out, check_in_time, check_out_time, price, currency, platform, reference, notes, travelers, paid_by, details } = args;
-  const segment_id = await getOrCreateSegment("hotel", location, check_in ?? null);
+  let segment_id;
+  try { segment_id = await resolveSegmentStrict("hotel", location, check_in ?? null); }
+  catch (err) { return { isError: true, content: [{ type: "text", text: `Error: ${err.message}` }] }; }
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -428,7 +483,9 @@ async function add_accommodation(args) {
 
 async function add_experience(args) {
   const { type, name, date, time, location, price, currency, platform, reference, notes, travelers, paid_by, details } = args;
-  const segment_id = await getOrCreateSegment(type, location, date ?? null);
+  let segment_id;
+  try { segment_id = await resolveSegmentStrict(type, location, date ?? null); }
+  catch (err) { return { isError: true, content: [{ type: "text", text: `Error: ${err.message}` }] }; }
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -453,7 +510,9 @@ async function add_experience(args) {
 }
 
 async function add_booking(args) {
-  const segment_id = await getOrCreateSegment(args.type, args.location, args.date ?? null);
+  let segment_id;
+  try { segment_id = await resolveSegmentStrict(args.type, args.location, args.date ?? null); }
+  catch (err) { return { isError: true, content: [{ type: "text", text: `Error: ${err.message}` }] }; }
   const { data, error } = await supabase
     .from("bookings")
     .insert({
@@ -478,6 +537,94 @@ async function add_booking(args) {
     .select().single();
   if (error) return { isError: true, content: [{ type: "text", text: `Error: ${error.message}` }] };
   return { content: [{ type: "text", text: `✓ Added [${data.type}] ${data.name} · ${data.date ?? "—"}${data.date_end ? ` → ${data.date_end}` : ""} · ${data.price != null ? `${data.price} ${data.currency}` : "—"}${data.location ? ` · ${data.location}` : ""}` }] };
+}
+
+// ── Shared row builder (used by bulk_add_bookings) ───────────────────────
+
+function _buildBookingRow(type, item, segment_id) {
+  const shared = {
+    price:     item.price     ?? null,
+    currency:  item.currency  || "USD",
+    platform:  item.platform  || null,
+    reference: item.reference || null,
+    notes:     item.notes     || null,
+    travelers: item.travelers || "both",
+    paid_by:   item.paid_by   || null,
+    details:   item.details   ?? null,
+    map_query: item.map_query || null,
+    map_lat:   item.map_lat   ?? null,
+    map_lng:   item.map_lng   ?? null,
+    segment_id,
+  };
+  if (TRANSIT_TYPES.includes(type)) {
+    const origin      = item.origin      || null;
+    const destination = item.destination || null;
+    return {
+      type, origin, location: destination,
+      name:     item.name || (origin && destination ? `${origin} → ${destination}` : null),
+      date:     item.date     || null,
+      date_end: item.date_end || null,
+      time:     item.departs  || item.time     || null,
+      time_end: item.arrives  || item.time_end || null,
+      ...shared,
+    };
+  }
+  if (type === "hotel") {
+    return {
+      type: "hotel", origin: null,
+      name:     item.name           || null,
+      location: item.location       || null,
+      date:     item.check_in       || item.date     || null,
+      date_end: item.check_out      || item.date_end || null,
+      time:     item.check_in_time  || item.time     || null,
+      time_end: item.check_out_time || item.time_end || null,
+      ...shared,
+    };
+  }
+  // ticket | food | activity | city_transport | shopping
+  return {
+    type, origin: null,
+    name:     item.name     || null,
+    location: item.location || null,
+    date:     item.date     || null,
+    date_end: item.date_end || null,
+    time:     item.time     || null,
+    time_end: item.time_end || null,
+    ...shared,
+  };
+}
+
+async function bulk_add_bookings(args) {
+  const { bookings } = args;
+  if (!Array.isArray(bookings) || !bookings.length)
+    return { isError: true, content: [{ type: "text", text: "Error: 'bookings' must be a non-empty array." }] };
+
+  // Phase 1: resolve all segments — abort on the first failure so nothing partial is inserted
+  const rows = [];
+  for (let i = 0; i < bookings.length; i++) {
+    const item = bookings[i];
+    const { type } = item;
+    const effectiveDate = item.check_in || item.date || null;
+    let segment_id;
+    try {
+      segment_id = await resolveSegmentStrict(type, item.location || null, effectiveDate);
+    } catch (err) {
+      return {
+        isError: true,
+        content: [{ type: "text", text: `Aborted — item ${i + 1} [${type}] "${item.name ?? item.origin ?? "?"}": ${err.message}` }],
+      };
+    }
+    rows.push(_buildBookingRow(type, item, segment_id));
+  }
+
+  // Phase 2: single batch insert
+  const { data, error } = await supabase.from("bookings").insert(rows).select();
+  if (error) return { isError: true, content: [{ type: "text", text: `DB Error: ${error.message}` }] };
+
+  const lines = data.map(b =>
+    `✓ [${b.type}] ${b.name} · ${b.date ?? "—"}${b.date_end ? ` → ${b.date_end}` : ""} · ${b.price != null ? `${b.price} ${b.currency}` : "—"}${b.location ? ` · ${b.location}` : ""} (id: ${b.id})`
+  );
+  return { content: [{ type: "text", text: `✓ Bulk inserted ${data.length} booking(s):\n\n${lines.join("\n")}` }] };
 }
 
 async function update_booking(args) {
@@ -718,7 +865,7 @@ export default async function handler(req, res) {
     const { name, arguments: args } = params;
     const handlers = {
       add_transport, add_accommodation, add_experience,
-      add_booking, list_bookings, query_bookings, settle_booking, delete_booking, update_booking, batch_update_bookings, set_pass,
+      add_booking, bulk_add_bookings, list_bookings, query_bookings, settle_booking, delete_booking, update_booking, batch_update_bookings, set_pass,
       list_segments, create_segment, update_segment, delete_segment, assign_segment,
       add_todo, list_todos, complete_todo, delete_todo,
     };
