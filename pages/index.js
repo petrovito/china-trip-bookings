@@ -1460,7 +1460,35 @@ export default function App() {
 
           {/* ── TRIP TAB ── */}
           {activeTab === "trip" && (
-            <div>
+            <div style={{ position: "relative" }}>
+              {/* Floating "today" button */}
+              <button
+                onClick={() => todayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                style={{
+                  position: "fixed",
+                  bottom: 28,
+                  right: 20,
+                  zIndex: 200,
+                  background: "var(--accent)",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 20,
+                  padding: "8px 16px",
+                  fontFamily: "'Source Code Pro', monospace",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  letterSpacing: "0.08em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  boxShadow: "0 2px 12px rgba(14,165,233,0.45)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block", flexShrink: 0 }} />
+                today
+              </button>
               {loading ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
               ) : segmentData.length === 0 ? (
