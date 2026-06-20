@@ -380,7 +380,7 @@ func existingType(b *models.Booking) *string {
 func GetBookingByID(ctx context.Context, id uuid.UUID) (*models.Booking, error) {
 	var b models.Booking
 	err := db.Pool.QueryRow(ctx, `
-		SELECT id, type, name, date, date_end, time, time_end, origin, location,
+		SELECT id, type, name, date::text, date_end::text, time, time_end, origin, location,
 		       price, currency, platform, reference, notes, travelers, paid_by,
 		       settled, segment_id, pass_code, pass_format, map_query, map_lat,
 		       map_lng, map_provider, map_place_id, details, created_at
@@ -412,7 +412,7 @@ func CreateBookingRecord(ctx context.Context, req BookingRequest) (*models.Booki
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-		RETURNING id, type, name, date, date_end, time, time_end, origin, location,
+		RETURNING id, type, name, date::text, date_end::text, time, time_end, origin, location,
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details, created_at
 	`, payload.Type, payload.Name, payload.Date, payload.DateEnd, payload.Time, payload.TimeEnd,
@@ -460,7 +460,7 @@ func UpdateBookingRecord(ctx context.Context, id uuid.UUID, req BookingRequest) 
 			reference = $12, notes = $13, travelers = $14, paid_by = $15, settled = $16,
 			segment_id = $17, map_query = $18, map_lat = $19, map_lng = $20, details = $21
 		WHERE id = $22
-		RETURNING id, type, name, date, date_end, time, time_end, origin, location,
+		RETURNING id, type, name, date::text, date_end::text, time, time_end, origin, location,
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details, created_at
 	`, payload.Type, payload.Name, payload.Date, payload.DateEnd, payload.Time, payload.TimeEnd,
@@ -498,7 +498,7 @@ func CreateBookingRecordForKind(ctx context.Context, kind string, req BookingReq
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
-		RETURNING id, type, name, date, date_end, time, time_end, origin, location,
+		RETURNING id, type, name, date::text, date_end::text, time, time_end, origin, location,
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details, created_at
 	`, payload.Type, payload.Name, payload.Date, payload.DateEnd, payload.Time, payload.TimeEnd,
@@ -542,7 +542,7 @@ func UpdateBookingRecordForKind(ctx context.Context, kind string, id uuid.UUID, 
 			reference = $12, notes = $13, travelers = $14, paid_by = $15, settled = $16,
 			segment_id = $17, map_query = $18, map_lat = $19, map_lng = $20, details = $21
 		WHERE id = $22
-		RETURNING id, type, name, date, date_end, time, time_end, origin, location,
+		RETURNING id, type, name, date::text, date_end::text, time, time_end, origin, location,
 			price, currency, platform, reference, notes, travelers, paid_by, settled,
 			segment_id, map_query, map_lat, map_lng, details, created_at
 	`, payload.Type, payload.Name, payload.Date, payload.DateEnd, payload.Time, payload.TimeEnd,

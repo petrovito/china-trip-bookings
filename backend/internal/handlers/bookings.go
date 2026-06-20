@@ -30,7 +30,7 @@ func parseUUIDParam(w http.ResponseWriter, r *http.Request, name string) (uuid.U
 
 func ListBookings(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
-		SELECT id, type, name, date, date_end, time, time_end, origin, location,
+		SELECT id, type, name, date::text, date_end::text, time, time_end, origin, location,
 		       price, currency, platform, reference, notes, travelers, paid_by,
 		       settled, segment_id, pass_code, pass_format, map_query, map_lat,
 		       map_lng, map_provider, map_place_id, details, created_at
@@ -135,7 +135,7 @@ func DeleteBooking(w http.ResponseWriter, r *http.Request) {
 
 func ListTransport(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
-		SELECT id, type, name, date, date_end, time, time_end, origin, location,
+		SELECT id, type, name, date::text, date_end::text, time, time_end, origin, location,
 		       price, currency, platform, reference, notes, travelers, paid_by,
 		       settled, segment_id, pass_code, pass_format, map_query, map_lat,
 		       map_lng, map_provider, map_place_id, details, created_at
@@ -194,7 +194,7 @@ func UpdateTransport(w http.ResponseWriter, r *http.Request) {
 
 func ListAccommodation(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
-		SELECT id, type, name, date, date_end, time, time_end, origin, location,
+		SELECT id, type, name, date::text, date_end::text, time, time_end, origin, location,
 		       price, currency, platform, reference, notes, travelers, paid_by,
 		       settled, segment_id, pass_code, pass_format, map_query, map_lat,
 		       map_lng, map_provider, map_place_id, details, created_at
@@ -253,7 +253,7 @@ func UpdateAccommodation(w http.ResponseWriter, r *http.Request) {
 
 func ListExperiences(w http.ResponseWriter, r *http.Request) {
 	rows, err := db.Pool.Query(r.Context(), `
-		SELECT id, type, name, date, date_end, time, time_end, origin, location,
+		SELECT id, type, name, date::text, date_end::text, time, time_end, origin, location,
 		       price, currency, platform, reference, notes, travelers, paid_by,
 		       settled, segment_id, pass_code, pass_format, map_query, map_lat,
 		       map_lng, map_provider, map_place_id, details, created_at
