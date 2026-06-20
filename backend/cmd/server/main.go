@@ -44,6 +44,8 @@ func main() {
 	r.Get("/api/todos", handlers.ListTodos)
 	r.Get("/api/summary", handlers.GetSummary)
 	r.Get("/api/unsplash", handlers.GetUnsplash)
+	r.Get("/api/mcp", handlers.MCPHandler)
+	r.Post("/api/mcp", handlers.MCPHandler)
 
 	// Write-protected
 	r.Group(func(r chi.Router) {
