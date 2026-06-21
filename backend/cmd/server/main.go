@@ -43,6 +43,7 @@ func main() {
 	r.Get("/api/segments", handlers.ListSegments)
 	r.Get("/api/todos", handlers.ListTodos)
 	r.Get("/api/summary", handlers.GetSummary)
+	r.Get("/api/trip", handlers.GetTrip)
 	r.Get("/api/unsplash", handlers.GetUnsplash)
 	r.Get("/api/mcp", handlers.MCPHandler)
 	r.Post("/api/mcp", handlers.MCPHandler)

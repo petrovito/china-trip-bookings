@@ -1,22 +1,20 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import Head from "next/head";
 
 const TYPES = [
-  { id: "flight",   label: "Flight",   color: "var(--accent)", icon: "✈"  },
-  { id: "hotel",    label: "Hotel",    color: "#8b5cf6", icon: "🏨" },
-  { id: "train",    label: "Train",    color: "#10b981", icon: "🚄" },
-  { id: "ticket",   label: "Ticket",   color: "#f97316", icon: "🎟" },
-  { id: "food",     label: "Food",     color: "#e879f9", icon: "🍜" },
-  { id: "activity",       label: "Activity", color: "#fbbf24", icon: "📍" },
-  { id: "city_transport", label: "City",     color: "#06b6d4", icon: "🚇" },
-  { id: "shopping",      label: "Shopping", color: "#84cc16", icon: "🛍" },
+  { id: "flight",         label: "Flight",   color: "var(--accent)", icon: "✈"  },
+  { id: "hotel",          label: "Hotel",    color: "#8b5cf6",       icon: "🏨" },
+  { id: "train",          label: "Train",    color: "#10b981",       icon: "🚄" },
+  { id: "ticket",         label: "Ticket",   color: "#f97316",       icon: "🎟" },
+  { id: "food",           label: "Food",     color: "#e879f9",       icon: "🍜" },
+  { id: "activity",       label: "Activity", color: "#fbbf24",       icon: "📍" },
+  { id: "city_transport", label: "City",     color: "#06b6d4",       icon: "🚇" },
+  { id: "shopping",       label: "Shopping", color: "#84cc16",       icon: "🛍" },
 ];
 
 const CURRENCIES = ["USD", "CNY", "EUR", "KRW", "VND", "DKK"];
-const BUILD = "2026-05-31";
+const BUILD = "2026-06-21";
 const FRIEND_NAME = process.env.NEXT_PUBLIC_FRIEND_NAME || "friend";
-// Base URL for the Go backend. Set NEXT_PUBLIC_API_URL in Vercel env vars.
-// In dev: add NEXT_PUBLIC_API_URL=http://localhost:8080 to .env.local
 const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 
 const EMPTY_FORM = {
@@ -27,7 +25,7 @@ const EMPTY_FORM = {
   reminder: false, reminderType: "buy", reminderAssignee: "me",
 };
 
-// Types excluded from expense tracking
+// Types counted as expenses (matches backend AllExpenseTypes)
 const EXPENSE_TYPES = ["flight", "hotel", "train", "ticket", "food", "city_transport", "shopping"];
 
 const TODO_CATS = [
@@ -39,7 +37,6 @@ const TODO_CATS = [
   { id: "do",     label: "Do",     icon: "🎯" },
 ];
 const EMPTY_TODO = { title: "", category: "pack", assignee: "both", deadline: "", segment_id: null };
-// Booking types that can have a pass/QR attached
 const PASS_TYPES = ["flight", "train", "ticket", "hotel", "activity", "city_transport"];
 
 const CITY_SUBTYPES = [
@@ -48,6 +45,7 @@ const CITY_SUBTYPES = [
   { id: "metro", icon: "🚇", label: "Metro" },
   { id: "other", icon: "🚐", label: "Other" },
 ];
+
 function parseSubtype(notes) {
   const m = (notes || "").match(/^\[(taxi|bus|metro|other)\] ?([\s\S]*)/);
   return m ? { subtype: m[1], cleanNotes: m[2] } : { subtype: "", cleanNotes: notes || "" };
@@ -57,42 +55,25 @@ function encodeSubtype(subtype, notes) {
   return subtype ? `[${subtype}] ${clean}`.trim() : clean;
 }
 
-// Structured "details" jsonb — keys shown as highlighted pills (when present),
-// plus a "ⓘ details" button revealing everything in a modal. Any key is allowed;
-// these just get nicer labels and pill treatment.
 const DETAIL_LABELS = {
-  car: "Car",
-  seat: "Seat",
-  seat_peter: "Seat (Peter)",
-  seat_friend: `Seat (${FRIEND_NAME})`,
-  gate: "Gate",
-  code: "Code",
-  room: "Room",
+  car: "Car", seat: "Seat", seat_peter: "Seat (Peter)",
+  seat_friend: `Seat (${FRIEND_NAME})`, gate: "Gate", code: "Code", room: "Room",
 };
 const PINNED_DETAIL_KEYS = ["car", "seat", "seat_peter", "seat_friend", "room", "gate"];
+
 function detailLabel(key) {
   return DETAIL_LABELS[key] || key.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 }
-// Which detail_* form fields are relevant for a given booking type
 function detailFieldsForType(type) {
   if (type === "flight" || type === "train") return ["car", "seat_peter", "seat_friend", "gate", "code"];
   if (type === "hotel") return ["room"];
   return [];
 }
 
-// ZXing format string → bwip-js bcid
 const FORMAT_TO_BCID = {
-  QR_CODE:     "qrcode",
-  PDF_417:     "pdf417",
-  AZTEC:       "azteccode",
-  CODE_128:    "code128",
-  CODE_39:     "code39",
-  DATA_MATRIX: "datamatrix",
-  EAN_13:      "ean13",
-  EAN_8:       "ean8",
-  UPC_A:       "upca",
-  ITF:         "interleaved2of5",
-  CODABAR:     "rationalizedCodabar",
+  QR_CODE: "qrcode", PDF_417: "pdf417", AZTEC: "azteccode", CODE_128: "code128",
+  CODE_39: "code39", DATA_MATRIX: "datamatrix", EAN_13: "ean13", EAN_8: "ean8",
+  UPC_A: "upca", ITF: "interleaved2of5", CODABAR: "rationalizedCodabar",
 };
 
 function fmt(price, currency) {
@@ -100,51 +81,19 @@ function fmt(price, currency) {
   return `${parseFloat(price).toFixed(2)} ${currency || "USD"}`;
 }
 
-function peterShare(b) {
-  if (!b.price) return 0;
-  const p = parseFloat(b.price);
-  if (b.travelers === "peter") return p;
-  if (b.travelers === "friend") return 0;
-  return p / 2;
-}
-
-// All days a booking spans
-function bookingDays(b) {
-  if (!b.date) return [];
-  if (!b.date_end || b.date_end <= b.date) return [b.date];
-  const days = [];
-  let cur = new Date(b.date + "T00:00:00");
-  const end = new Date(b.date_end + "T00:00:00");
-  while (cur <= end) {
-    days.push(toDateStr(cur));
-    cur.setDate(cur.getDate() + 1);
-  }
-  return days;
-}
-
-function toDateStr(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 function fmtDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
 }
-
 function fmtDateShort(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
-// ── Offline cache ──
-// Every fetched resource (bookings, todos, segments, ...) is mirrored to
-// localStorage in a single standard envelope: { v: CACHE_VERSION, ts, data }.
-// fetchWithCache() is the one place that knows how to read/write this format,
-// so each resource's fetch function just provides a URL, a cache key, and a
-// setter — no per-resource caching logic to duplicate or drift.
-const CACHE_VERSION = 1;
+// ── Offline cache ─────────────────────────────────────────────────────────────
+const CACHE_VERSION = 2; // bumped for new response shapes
 
 function cacheRead(key) {
   try {
@@ -152,7 +101,7 @@ function cacheRead(key) {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed || parsed.v !== CACHE_VERSION || !("data" in parsed)) return null;
-    return parsed; // { v, ts, data }
+    return parsed;
   } catch { return null; }
 }
 
@@ -162,10 +111,7 @@ function cacheWrite(key, data) {
   } catch {}
 }
 
-// Fetch `url`, pass the JSON result to `setter`, and cache it under `key`.
-// On failure, fall back to the cached copy (if any) and report that the
-// data is stale so the UI can show an offline indicator.
-async function fetchWithCache(url, key, setter, { fallback = [] } = {}) {
+async function fetchWithCache(url, key, setter, { fallback = null } = {}) {
   try {
     const res = await fetch(url);
     const text = await res.text();
@@ -180,66 +126,78 @@ async function fetchWithCache(url, key, setter, { fallback = [] } = {}) {
       setter(cached.data);
       return { ok: false, cached: true, cachedAt: cached.ts, error: e };
     }
-    setter(fallback);
+    if (fallback !== null) setter(fallback);
     return { ok: false, cached: false, error: e };
   }
 }
 
+// ── Traveler filter (display-only, no computation) ────────────────────────────
+function travelerMatch(b, identity) {
+  return !identity || b.travelers === "both" || b.travelers === identity;
+}
+
 export default function App() {
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filterTypes, setFilterTypes] = useState([]);
-  const [filterSettled, setFilterSettled] = useState("all");
+  const [bookings,   setBookings]   = useState([]);
+  const [tripData,   setTripData]   = useState(null);   // TripResponse from /api/trip
+  const [summaryData, setSummaryData] = useState(null); // FullSummaryResponse from /api/summary
+  const [todos,      setTodos]      = useState([]);
+  const [loading,    setLoading]    = useState(true);
+  const [offline,    setOffline]    = useState(false);
+  const [cachedAt,   setCachedAt]   = useState(null);
+  const [error,      setError]      = useState(null);
+
+  const [filterTypes,     setFilterTypes]     = useState([]);
+  const [filterSettled,   setFilterSettled]   = useState("all");
   const [filterTravelers, setFilterTravelers] = useState("all");
-  const [filterPaidBy, setFilterPaidBy] = useState("all");
-  const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editId, setEditId] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [offline, setOffline] = useState(false);
-  const [cachedAt, setCachedAt] = useState(null);
-  const [deleteConfirm, setDeleteConfirm] = useState(null);
-  const [activeTab, setActiveTab] = useState("trip");
-  const [writeToken, setWriteToken] = useState("");
-  const [showUnlock, setShowUnlock] = useState(false);
-  const [unlockInput, setUnlockInput] = useState("");
-  const [toast, setToast] = useState(null);
-  const [showFilters, setShowFilters] = useState(true);
-  const [rates, setRates] = useState(null);
-  const [ratesLoading, setRatesLoading] = useState(false);
-  const [expandedCards, setExpandedCards] = useState({});
-  const [detailsModal, setDetailsModal] = useState(null); // booking object, shows full `details` + address
+  const [filterPaidBy,    setFilterPaidBy]    = useState("all");
+  const [showFilters,     setShowFilters]     = useState(true);
+
+  const [showForm,  setShowForm]  = useState(false);
+  const [form,      setForm]      = useState(EMPTY_FORM);
+  const [editId,    setEditId]    = useState(null);
+  const [saving,    setSaving]    = useState(false);
+
+  const [activeTab,      setActiveTab]      = useState("trip");
+  const [writeToken,     setWriteToken]     = useState("");
+  const [showUnlock,     setShowUnlock]     = useState(false);
+  const [unlockInput,    setUnlockInput]    = useState("");
+  const [toast,          setToast]          = useState(null);
+  const [deleteConfirm,  setDeleteConfirm]  = useState(null);
+  const [expandedCards,  setExpandedCards]  = useState({});
   const [collapsedGroups, setCollapsedGroups] = useState({});
-  const [segments, setSegments] = useState([]);
-  const [locationImages, setLocationImages] = useState({});
-  const [showSummary, setShowSummary] = useState(false);
-  const [summaryMode, setSummaryMode] = useState("expenses"); // "expenses" | "settlement"
+  const [detailsModal,   setDetailsModal]   = useState(null);
+
+  const [showSummary,       setShowSummary]       = useState(false);
+  const [summaryMode,       setSummaryMode]        = useState("expenses");
   const [summaryShowSettled, setSummaryShowSettled] = useState(false);
-  const [expandedSumCats, setExpandedSumCats] = useState({});
-  const [expandedFoodDays, setExpandedFoodDays] = useState({});
-  const [expandedTransitDays, setExpandedTransitDays] = useState({});
+  const [expandedSumCats,   setExpandedSumCats]   = useState({});
   const [segmentExpenseOpen, setSegmentExpenseOpen] = useState(null);
-  // Todos
-  const [todos, setTodos] = useState([]);
-  const [todoForm, setTodoForm] = useState(EMPTY_TODO);
-  const [showTodoForm, setShowTodoForm] = useState(false);
-  const [todoFilterCat, setTodoFilterCat] = useState("all");
+  const [summaryLoading,    setSummaryLoading]     = useState(false);
+
+  const [expandedFoodDays,    setExpandedFoodDays]    = useState({});
+  const [expandedTransitDays, setExpandedTransitDays] = useState({});
+
+  const [todoForm,          setTodoForm]          = useState(EMPTY_TODO);
+  const [showTodoForm,      setShowTodoForm]      = useState(false);
+  const [todoFilterCat,     setTodoFilterCat]     = useState("all");
   const [todoFilterAssignee, setTodoFilterAssignee] = useState("all");
-  // Pass viewer
-  const [passViewer, setPassViewer] = useState(null); // { id, name, passes: [{who,code,format}], idx }
-  // Identity: which traveler is on this device
-  const [identity, setIdentity] = useState(null); // "peter" | "friend"
+  const [editingTodo,       setEditingTodo]       = useState(null);
+
+  const [passViewer,         setPassViewer]         = useState(null);
+  const [identity,           setIdentity]           = useState(null);
   const [showIdentityPicker, setShowIdentityPicker] = useState(false);
   const [pendingPassBooking, setPendingPassBooking] = useState(null);
-  const [editingTodo, setEditingTodo] = useState(null); // todo object being edited inline
-  const todayRef = useRef(null);
-  const passFileRef = useRef(null);
+
+  const [locationImages, setLocationImages] = useState({});
+
+  const todayRef      = useRef(null);
+  const passFileRef   = useRef(null);
   const passUploadForRef = useRef(null);
   const passUploadWhoRef = useRef(null);
-  const passCanvasRef = useRef(null);
+  const passCanvasRef    = useRef(null);
   const pickerAutoShownRef = useRef(false);
 
+  // ── Persist preferences ───────────────────────────────────────────────────
   useEffect(() => {
     try { setFilterTypes(JSON.parse(localStorage.getItem("ft") || "[]")); } catch { setFilterTypes([]); }
     setFilterSettled(localStorage.getItem("fs") || "all");
@@ -258,16 +216,18 @@ export default function App() {
       setTimeout(() => setShowIdentityPicker(true), 350);
     }
   }, []);
-  useEffect(() => { localStorage.setItem("ft", JSON.stringify(filterTypes)); }, [filterTypes]);
-  useEffect(() => { localStorage.setItem("fs",  filterSettled);   }, [filterSettled]);
-  useEffect(() => { localStorage.setItem("ftr", filterTravelers); }, [filterTravelers]);
-  useEffect(() => { localStorage.setItem("fp",  filterPaidBy);    }, [filterPaidBy]);
-  useEffect(() => { localStorage.setItem("sf",  showFilters ? "1" : "0"); }, [showFilters]);
-  useEffect(() => { localStorage.setItem("tab", activeTab); }, [activeTab]);
+  useEffect(() => { localStorage.setItem("ft",  JSON.stringify(filterTypes)); }, [filterTypes]);
+  useEffect(() => { localStorage.setItem("fs",  filterSettled);               }, [filterSettled]);
+  useEffect(() => { localStorage.setItem("ftr", filterTravelers);             }, [filterTravelers]);
+  useEffect(() => { localStorage.setItem("fp",  filterPaidBy);                }, [filterPaidBy]);
+  useEffect(() => { localStorage.setItem("sf",  showFilters ? "1" : "0");     }, [showFilters]);
+  useEffect(() => { localStorage.setItem("tab", activeTab);                   }, [activeTab]);
   useEffect(() => { localStorage.setItem("cg",  JSON.stringify(collapsedGroups)); }, [collapsedGroups]);
-  useEffect(() => { localStorage.setItem("tfc", todoFilterCat); }, [todoFilterCat]);
-  useEffect(() => { localStorage.setItem("tfa", todoFilterAssignee); }, [todoFilterAssignee]);
+  useEffect(() => { localStorage.setItem("tfc", todoFilterCat);               }, [todoFilterCat]);
+  useEffect(() => { localStorage.setItem("tfa", todoFilterAssignee);          }, [todoFilterAssignee]);
   useEffect(() => { if (identity) localStorage.setItem("who", identity); else localStorage.removeItem("who"); }, [identity]);
+
+  // ── Pass barcode render ───────────────────────────────────────────────────
   useEffect(() => {
     if (!passViewer?.passes || !passCanvasRef.current) return;
     const p = passViewer.passes[passViewer.idx ?? 0];
@@ -276,48 +236,72 @@ export default function App() {
       try {
         bwipjs.toCanvas(passCanvasRef.current, {
           bcid: FORMAT_TO_BCID[p.format] || "qrcode",
-          text: p.code,
-          scale: 4,
-          includetext: false,
+          text: p.code, scale: 4, includetext: false,
         });
       } catch (err) { console.error("Barcode render error:", err); }
     });
   }, [passViewer]);
-  useEffect(() => { fetchBookings(); }, []);
-  useEffect(() => { fetchTodos(); }, []);
-  useEffect(() => { fetchSegments(); }, []);
 
-  // Scroll to today when switching to trip tab
+  // ── Scroll to today on trip tab ───────────────────────────────────────────
   useEffect(() => {
     if (activeTab === "trip" && todayRef.current) {
       setTimeout(() => todayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     }
   }, [activeTab]);
 
+  // ── Unsplash images ───────────────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab !== "trip" || !tripData) return;
+    const locations = [...new Set(
+      tripData.timeline.filter(i => i.kind === "segment").map(i => i.segment.location)
+    )];
+    locations.forEach(loc => {
+      if (locationImages[loc]) return;
+      fetch(`${API_URL}/api/unsplash?location=${encodeURIComponent(loc)}`)
+        .then(r => r.json())
+        .then(data => { if (data?.url) setLocationImages(prev => ({ ...prev, [loc]: data.url })); })
+        .catch(() => {});
+    });
+  }, [activeTab, tripData]);
+
+  // ── Initial fetches ───────────────────────────────────────────────────────
+  useEffect(() => { fetchBookings(); }, []);
+  useEffect(() => { fetchTrip();     }, []);
+  useEffect(() => { fetchTodos();    }, []);
+  useEffect(() => { fetchSummary();  }, []);
+
   async function fetchBookings() {
     setLoading(true); setError(null);
-    const result = await fetchWithCache(`${API_URL}/api/bookings`, "bookings_cache",
-      (data) => setBookings(Array.isArray(data) ? data : []));
-    if (result.ok) {
-      setOffline(false); setCachedAt(null);
-    } else if (result.cached) {
-      setOffline(true); setCachedAt(result.cachedAt);
-    } else {
-      setOffline(false); setError(result.error.message);
-    }
+    const result = await fetchWithCache(`${API_URL}/api/bookings`, "bookings_cache_v2",
+      (data) => setBookings(Array.isArray(data) ? data : []), { fallback: [] });
+    if (result.ok) { setOffline(false); setCachedAt(null); }
+    else if (result.cached) { setOffline(true); setCachedAt(result.cachedAt); }
+    else { setOffline(false); setError(result.error?.message); }
     setLoading(false);
   }
 
+  async function fetchTrip() {
+    await fetchWithCache(`${API_URL}/api/trip`, "trip_cache_v2",
+      (data) => setTripData(data), { fallback: null });
+  }
+
   async function fetchTodos() {
-    await fetchWithCache(`${API_URL}/api/todos`, "todos_cache",
-      (data) => setTodos(Array.isArray(data) ? data : []));
+    await fetchWithCache(`${API_URL}/api/todos`, "todos_cache_v2",
+      (data) => setTodos(Array.isArray(data) ? data : []), { fallback: [] });
   }
 
-  async function fetchSegments() {
-    await fetchWithCache(`${API_URL}/api/segments`, "segments_cache",
-      (data) => setSegments(Array.isArray(data) ? data : []));
+  async function fetchSummary() {
+    setSummaryLoading(true);
+    await fetchWithCache(`${API_URL}/api/summary`, "summary_cache_v2",
+      (data) => setSummaryData(data), { fallback: null });
+    setSummaryLoading(false);
   }
 
+  async function refreshAll() {
+    await Promise.all([fetchBookings(), fetchTrip(), fetchTodos(), fetchSummary()]);
+  }
+
+  // ── Todos CRUD ─────────────────────────────────────────────────────────────
   async function handleAddTodo() {
     if (!todoForm.title.trim()) return;
     const reset = () => { setTodoForm({ ...EMPTY_TODO, assignee: identity || "peter" }); setShowTodoForm(false); };
@@ -328,39 +312,42 @@ export default function App() {
         { ...todoForm, assignee: "peter",  id: `tmp-${t}-1`, done: false },
         { ...todoForm, assignee: "friend", id: `tmp-${t}-2`, done: false },
       ];
-      setTodos(prev => { const u = [...prev, tmp1, tmp2]; cacheWrite("todos_cache", u); return u; });
-      reset(); showToast("2 todos added — one each");
+      setTodos(prev => { const u = [...prev, tmp1, tmp2]; cacheWrite("todos_cache_v2", u); return u; });
+      reset(); showToast("2 todos added");
       const [r1, r2] = await Promise.all(
-        ["peter", "friend"].map(a => fetch(`${API_URL}/api/todos`, { method: "POST", headers: authedHeaders, body: JSON.stringify({ ...todoForm, assignee: a }) }))
+        ["peter", "friend"].map(a => fetch(`${API_URL}/api/todos`, {
+          method: "POST", headers: authedHeaders,
+          body: JSON.stringify({ ...todoForm, assignee: a }),
+        }))
       );
       if (r1.status === 401 || r2.status === 401) {
-        setTodos(prev => { const u = prev.filter(t => t.id !== tmp1.id && t.id !== tmp2.id); cacheWrite("todos_cache", u); return u; });
+        setTodos(prev => { const u = prev.filter(t => t.id !== tmp1.id && t.id !== tmp2.id); cacheWrite("todos_cache_v2", u); return u; });
         showToast("Wrong password", false); return;
       }
       const [d1, d2] = await Promise.all([r1.json(), r2.json()]);
-      setTodos(prev => { const u = prev.map(t => t.id === tmp1.id ? d1 : t.id === tmp2.id ? d2 : t); cacheWrite("todos_cache", u); return u; });
+      setTodos(prev => { const u = prev.map(t => t.id === tmp1.id ? d1 : t.id === tmp2.id ? d2 : t); cacheWrite("todos_cache_v2", u); return u; });
       return;
     }
 
     const tmpId = `tmp-${Date.now()}`;
     const tmpTodo = { ...todoForm, id: tmpId, done: false };
-    setTodos(prev => { const u = [...prev, tmpTodo]; cacheWrite("todos_cache", u); return u; });
+    setTodos(prev => { const u = [...prev, tmpTodo]; cacheWrite("todos_cache_v2", u); return u; });
     reset(); showToast("Todo added");
     const res = await fetch(`${API_URL}/api/todos`, { method: "POST", headers: authedHeaders, body: JSON.stringify(todoForm) });
     if (res.status === 401) {
-      setTodos(prev => { const u = prev.filter(t => t.id !== tmpId); cacheWrite("todos_cache", u); return u; });
+      setTodos(prev => { const u = prev.filter(t => t.id !== tmpId); cacheWrite("todos_cache_v2", u); return u; });
       showToast("Wrong password", false); return;
     }
     const todo = await res.json();
-    setTodos(prev => { const u = prev.map(t => t.id === tmpId ? todo : t); cacheWrite("todos_cache", u); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === tmpId ? todo : t); cacheWrite("todos_cache_v2", u); return u; });
   }
 
   async function handleToggleTodo(todo) {
     const updated = { ...todo, done: !todo.done };
-    setTodos(prev => { const u = prev.map(t => t.id === todo.id ? updated : t); cacheWrite("todos_cache", u); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === todo.id ? updated : t); cacheWrite("todos_cache_v2", u); return u; });
     const res = await fetch(`${API_URL}/api/todos/${todo.id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ done: !todo.done }) });
     if (res.status === 401) {
-      setTodos(prev => { const u = prev.map(t => t.id === todo.id ? todo : t); cacheWrite("todos_cache", u); return u; });
+      setTodos(prev => { const u = prev.map(t => t.id === todo.id ? todo : t); cacheWrite("todos_cache_v2", u); return u; });
       showToast("Wrong password", false);
     }
   }
@@ -368,20 +355,24 @@ export default function App() {
   async function handleDeleteTodo(id) {
     const res = await fetch(`${API_URL}/api/todos/${id}`, { method: "DELETE", headers: authedHeaders });
     if (res.status === 401) { showToast("Wrong password", false); return; }
-    setTodos(prev => { const u = prev.filter(t => t.id !== id); cacheWrite("todos_cache", u); return u; });
+    setTodos(prev => { const u = prev.filter(t => t.id !== id); cacheWrite("todos_cache_v2", u); return u; });
     showToast("Todo deleted");
   }
 
   async function handleSaveEditTodo() {
     if (!editingTodo?.title?.trim()) return;
     const { id, title, category, assignee, deadline } = editingTodo;
-    const res = await fetch(`${API_URL}/api/todos/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ title, category, assignee, deadline: deadline || null }) });
+    const res = await fetch(`${API_URL}/api/todos/${id}`, {
+      method: "PATCH", headers: authedHeaders,
+      body: JSON.stringify({ title, category, assignee, deadline: deadline || null }),
+    });
     if (res.status === 401) { showToast("Wrong password", false); return; }
-    setTodos(prev => { const u = prev.map(t => t.id === id ? { ...t, title, category, assignee } : t); cacheWrite("todos_cache", u); return u; });
+    setTodos(prev => { const u = prev.map(t => t.id === id ? { ...t, title, category, assignee } : t); cacheWrite("todos_cache_v2", u); return u; });
     setEditingTodo(null);
     showToast("Todo updated");
   }
 
+  // ── Pass management ───────────────────────────────────────────────────────
   function getBookingPasses(b) {
     if (b.passes && b.passes.length > 0) return b.passes;
     if (b.pass_code) return [{ who: "peter", code: b.pass_code, format: b.pass_format }];
@@ -391,21 +382,16 @@ export default function App() {
   function handlePassOpen(b, targetWho) {
     const who = targetWho !== undefined ? targetWho : identity;
     const allPasses = getBookingPasses(b);
-
     if (!who) {
-      // Don't know who we are yet — ask first, then re-open
       setPendingPassBooking({ b, targetWho });
       setShowIdentityPicker(true);
       return;
     }
-
     const myPasses = allPasses.filter(p => p.who === who);
     if (myPasses.length > 0) {
       setPassViewer({ id: b.id, name: b.name, passes: myPasses, idx: 0 });
       return;
     }
-
-    // No pass for this identity yet — if canWrite, trigger upload
     if (canWrite) {
       passUploadForRef.current = b;
       passUploadWhoRef.current = who;
@@ -423,11 +409,8 @@ export default function App() {
       setTimeout(() => handlePassOpen(b, targetWho !== undefined ? targetWho : who), 50);
     }
   }
-
   function handleIdentityReset() {
-    setIdentity(null);
-    localStorage.removeItem("who");
-    setShowIdentityPicker(false);
+    setIdentity(null); localStorage.removeItem("who"); setShowIdentityPicker(false);
   }
 
   async function handlePassFile(e) {
@@ -446,47 +429,36 @@ export default function App() {
       const existingPasses = currentBooking?.passes || [];
       const newPasses = [...existingPasses, { who, code, format }];
       const res = await fetch(`${API_URL}/api/bookings/${b.id}`, {
-        method: "PATCH",
-        headers: authedHeaders,
-        body: JSON.stringify({ passes: newPasses }),
+        method: "PATCH", headers: authedHeaders, body: JSON.stringify({ passes: newPasses }),
       });
       if (res.status === 401) { showToast("Wrong password", false); return; }
       setBookings(prev => {
         const updated = prev.map(bk => bk.id === b.id ? { ...bk, passes: newPasses } : bk);
-        cacheWrite("bookings_cache", updated);
-        return updated;
+        cacheWrite("bookings_cache_v2", updated); return updated;
       });
       const myPasses = newPasses.filter(p => p.who === who);
       setPassViewer({ id: b.id, name: b.name, passes: myPasses, idx: myPasses.length - 1 });
       showToast("Pass decoded ✓");
-    } catch {
-      showToast("Could not read barcode — try a clearer screenshot", false);
-    } finally {
-      URL.revokeObjectURL(url);
-      e.target.value = "";
-    }
+    } catch { showToast("Could not read barcode — try a clearer screenshot", false); }
+    finally { URL.revokeObjectURL(url); e.target.value = ""; }
   }
 
   async function handlePassRemove(bookingId, passEntry) {
     const b = bookings.find(bk => bk.id === bookingId);
     if (!b) return;
-    const allPasses = getBookingPasses(b);
-    const newPasses = allPasses.filter(p => !(p.who === passEntry.who && p.code === passEntry.code));
+    const newPasses = getBookingPasses(b).filter(p => !(p.who === passEntry.who && p.code === passEntry.code));
     const res = await fetch(`${API_URL}/api/bookings/${bookingId}`, {
-      method: "PATCH",
-      headers: authedHeaders,
-      body: JSON.stringify({ passes: newPasses }),
+      method: "PATCH", headers: authedHeaders, body: JSON.stringify({ passes: newPasses }),
     });
     if (res.status === 401) { showToast("Wrong password", false); return; }
     setBookings(prev => {
       const updated = prev.map(bk => bk.id === bookingId ? { ...bk, passes: newPasses } : bk);
-      cacheWrite("bookings_cache", updated);
-      return updated;
+      cacheWrite("bookings_cache_v2", updated); return updated;
     });
-    setPassViewer(null);
-    showToast("Pass removed");
+    setPassViewer(null); showToast("Pass removed");
   }
 
+  // ── Booking form ──────────────────────────────────────────────────────────
   function apiBase(type) {
     if (type === "flight" || type === "train") return `${API_URL}/api/transport`;
     if (type === "hotel") return `${API_URL}/api/accommodation`;
@@ -495,24 +467,17 @@ export default function App() {
 
   async function handleSubmit() {
     const isTransport = form.type === "flight" || form.type === "train";
-    // Transport name is auto-generated server-side; other types require a name
     if (!form.name && !isTransport) return;
     setSaving(true);
     const detailKeys = detailFieldsForType(form.type);
-    const detailEntries = detailKeys
-      .map(k => [k, (form[`detail_${k}`] || "").trim()])
-      .filter(([, v]) => v);
+    const detailEntries = detailKeys.map(k => [k, (form[`detail_${k}`] || "").trim()]).filter(([,v]) => v);
     const details = detailEntries.length ? Object.fromEntries(detailEntries) : null;
     const payload = {
       ...form,
       price: form.price ? parseFloat(form.price) : null,
-      date: form.date || null,
-      date_end: form.date_end || null,
-      location: form.location || null,
-      paid_by: form.paid_by || null,
-      time: form.time || null,
-      time_end: form.time_end || null,
-      origin: form.origin || null,
+      date: form.date || null, date_end: form.date_end || null,
+      location: form.location || null, paid_by: form.paid_by || null,
+      time: form.time || null, time_end: form.time_end || null, origin: form.origin || null,
       notes: form.type === "city_transport" ? (encodeSubtype(form.subtype, form.notes) || null) : (form.notes || null),
       details,
     };
@@ -520,7 +485,7 @@ export default function App() {
     if (editId) {
       const r = await fetch(`${base}/${editId}`, { method: "PUT", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
-      // Auto-complete linked todos when booking transitions from unpaid → paid
+      // Auto-complete linked todos
       const prev = bookings.find(b => b.id === editId);
       if (!prev?.paid_by && payload.paid_by) {
         const linked = todos.filter(t => t.booking_id === editId && !t.done);
@@ -533,7 +498,6 @@ export default function App() {
       const r = await fetch(base, { method: "POST", headers: authedHeaders, body: JSON.stringify(payload) });
       if (r.status === 401) { showToast("Wrong password", false); setSaving(false); return; }
       const newBooking = await r.json();
-      // Create linked reminder todo(s)
       if (form.reminder && newBooking?.id) {
         const todoTitle = form.reminderType === "prepare" ? `Prepare: ${form.name}` : `Buy: ${form.name}`;
         const todoCategory = form.reminderType === "prepare" ? "pack" : "book";
@@ -543,8 +507,7 @@ export default function App() {
             method: "POST", headers: authedHeaders,
             body: JSON.stringify({
               title: todoTitle, category: todoCategory, assignee,
-              booking_id: newBooking.id,
-              segment_id: newBooking.segment_id || null,
+              booking_id: newBooking.id, segment_id: newBooking.segment_id || null,
               deadline: form.date || null,
             }),
           })
@@ -552,23 +515,20 @@ export default function App() {
         await fetchTodos();
       }
     }
-    await fetchBookings();
+    await refreshAll();
     showToast(editId ? "Booking updated" : "Booking added");
     setForm(EMPTY_FORM); setShowForm(false); setEditId(null); setSaving(false);
   }
 
   async function handleDelete(id) {
     await fetch(`${API_URL}/api/bookings/${id}`, { method: "DELETE", headers: authedHeaders });
-    setDeleteConfirm(null); await fetchBookings(); showToast("Booking deleted", true);
+    setDeleteConfirm(null); await refreshAll(); showToast("Booking deleted");
   }
 
   function handleEdit(b) {
     const isTransport = b.type === "flight" || b.type === "train";
-    // For legacy transport bookings where origin wasn't stored separately, parse from name
     let origin = b.origin || "";
-    if (!origin && isTransport && b.name?.includes(" → ")) {
-      origin = b.name.split(" → ")[0].trim();
-    }
+    if (!origin && isTransport && b.name?.includes(" → ")) origin = b.name.split(" → ")[0].trim();
     setForm({
       type: b.type, name: b.name, date: b.date || "", date_end: b.date_end || "",
       price: b.price != null ? String(b.price) : "", currency: b.currency || "USD",
@@ -578,16 +538,19 @@ export default function App() {
         : { notes: b.notes || "", subtype: "" }),
       travelers: b.travelers || "both", paid_by: b.paid_by || "", location: b.location || "",
       time: b.time || "", time_end: b.time_end || "", origin,
-      detail_car: b.details?.car || "", detail_seat_peter: b.details?.seat_peter || "", detail_seat_friend: b.details?.seat_friend || "",
-      detail_gate: b.details?.gate || "", detail_code: b.details?.code || "", detail_room: b.details?.room || "",
+      detail_car: b.details?.car || "", detail_seat_peter: b.details?.seat_peter || "",
+      detail_seat_friend: b.details?.seat_friend || "", detail_gate: b.details?.gate || "",
+      detail_code: b.details?.code || "", detail_room: b.details?.room || "",
       reminder: false, reminderType: "buy", reminderAssignee: "me",
     });
     setEditId(b.id); setShowForm(true); window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   async function handleSettle(id, currentlySettled) {
-    await fetch(`${API_URL}/api/bookings/${id}`, { method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: !currentlySettled }) });
-    await fetchBookings(); showToast(currentlySettled ? "Marked as unsettled" : "Marked as settled");
+    await fetch(`${API_URL}/api/bookings/${id}`, {
+      method: "PATCH", headers: authedHeaders, body: JSON.stringify({ settled: !currentlySettled }),
+    });
+    await refreshAll(); showToast(currentlySettled ? "Marked as unsettled" : "Marked as settled");
   }
 
   function handleCancel() { setForm(EMPTY_FORM); setShowForm(false); setEditId(null); }
@@ -600,45 +563,53 @@ export default function App() {
     setWriteToken(token); localStorage.setItem("wt", token);
     setShowUnlock(false); setUnlockInput("");
   }
-
-  function handleLock() {
-    setWriteToken(""); localStorage.removeItem("wt"); setShowForm(false);
-  }
+  function handleLock() { setWriteToken(""); localStorage.removeItem("wt"); setShowForm(false); }
 
   function showToast(msg, ok = true) {
-    setToast({ msg, ok });
-    setTimeout(() => setToast(null), 2800);
+    setToast({ msg, ok }); setTimeout(() => setToast(null), 2800);
   }
 
-  async function fetchRates() {
-    setRatesLoading(true);
-    try {
-      const res = await fetch("https://open.er-api.com/v6/latest/DKK");
-      const data = await res.json();
-      if (data.result === "success") setRates(data);
-    } catch {} finally { setRatesLoading(false); }
+  // ── Map helpers (pure display) ────────────────────────────────────────────
+  function mapTargets(b) {
+    const query = b.map_query ||
+      (b.type === "flight" ? (b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name) :
+       b.type === "train"  ? (b.origin ? `${b.origin} railway station` : b.location ? `${b.location} railway station China` : b.name) :
+       b.location ? `${b.name}, ${b.location}, China` : `${b.name}, China`);
+    const encoded = encodeURIComponent(query);
+    const name    = encodeURIComponent(b.name || query);
+    const lat = b.map_lat; const lng = b.map_lng;
+    const hasCoords = lat != null && lng != null && lat !== "" && lng !== "";
+    const appUrl = hasCoords
+      ? `androidamap://viewMap?sourceApplication=tripbookings&poiname=${name}&lat=${lat}&lon=${lng}&dev=1`
+      : `androidamap://poi?sourceApplication=tripbookings&keywords=${encoded}&dev=0`;
+    const webUrl = hasCoords
+      ? `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}&src=tripbookings`
+      : `https://uri.amap.com/search?keyword=${encoded}&src=tripbookings`;
+    return { appUrl, webUrl };
   }
 
-  useEffect(() => { if (showSummary) fetchRates(); }, [showSummary]);
-  useEffect(() => { if (segmentExpenseOpen && !rates && !ratesLoading) fetchRates(); }, [segmentExpenseOpen]);
+  function mapsLink(b) { return mapTargets(b).webUrl; }
+  function openMapsLink(e, b) {
+    e.preventDefault(); e.stopPropagation();
+    const { appUrl, webUrl } = mapTargets(b);
+    const intentUrl = appUrl.replace(/^androidamap:\/\//, "intent://") +
+      `#Intent;scheme=androidamap;package=com.autonavi.minimap;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
+    window.location.href = intentUrl;
+  }
 
-  // Fetch Unsplash vibe image for each location when trip tab opens
-  useEffect(() => {
-    if (activeTab !== "trip") return;
-    const locations = [...new Set(bookings.map(b => b.location).filter(Boolean))];
-    locations.forEach(loc => {
-      if (locationImages[loc]) return; // already fetched
-      const query = encodeURIComponent(`${loc} China landscape travel`);
-      fetch(`${API_URL}/api/unsplash?location=${encodeURIComponent(loc)}`)
-        .then(r => r.json())
-        .then(data => {
-          if (data?.url) setLocationImages(prev => ({ ...prev, [loc]: data.url }));
-        })
-        .catch(() => {});
-    });
-  }, [activeTab, bookings]);
+  function platformLink(b) {
+    if (!b.platform && !b.reference) return null;
+    const pl = (b.platform || "").toLowerCase();
+    if (pl.includes("booking.com")) return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(b.name)}`;
+    if (pl.includes("trip.com") || pl.includes("ctrip")) return "https://www.trip.com/";
+    if (pl.includes("klook")) return "https://www.klook.com/";
+    if (pl.includes("airbnb")) return "https://www.airbnb.com/";
+    return null;
+  }
 
-  // Personalized view: only bookings that pertain to the current user
+  // ── Derived display state ─────────────────────────────────────────────────
+  const today = tripData?.today || new Date().toISOString().slice(0, 10);
+
   const myBookings = identity
     ? bookings.filter(b => b.travelers === "both" || b.travelers === identity)
     : bookings;
@@ -649,148 +620,45 @@ export default function App() {
     .filter(b => filterTravelers === "all" || b.travelers === filterTravelers)
     .filter(b => filterPaidBy === "all" || (filterPaidBy === "pending" ? !b.paid_by : b.paid_by === filterPaidBy));
 
-  const activeCurrencies = [...new Set(
-    bookings.filter(b => b.price && b.currency && EXPENSE_TYPES.includes(b.type)).map(b => b.currency)
-  )].sort();
+  // Auto-todos now use flags pre-computed by the backend
+  const autoTodos = (() => {
+    if (!tripData) return [];
+    const result = [];
+    const segItems = tripData.timeline.filter(i => i.kind === "segment");
 
-  function calcForCurrency(currency) {
-    const bks = bookings.filter(b => b.currency === currency && b.price && EXPENSE_TYPES.includes(b.type));
-    const paid = bks.filter(b => b.paid_by);
-    const pending = bks.filter(b => !b.paid_by);
-    const total = bks.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pendingTotal = pending.reduce((s, b) => s + parseFloat(b.price), 0);
-    const pOwes = paid.filter(b => !b.settled).reduce((s, b) => {
-      const fronted = b.paid_by === "peter" ? parseFloat(b.price) : 0;
-      return s + peterShare(b) - fronted;
-    }, 0);
-    const settledCount = paid.filter(b => b.settled).length;
-    return { total, pendingTotal, pOwes, count: bks.length, pendingCount: pending.length, settledCount };
-  }
-
-  // Trip tab helpers
-  const today = toDateStr(new Date());
-
-  // Computed segment date ranges (dates float off bookings, never stored)
-  const segmentData = useMemo(() => {
-    return segments.map(seg => {
-      const segBookings = myBookings.filter(b => b.segment_id === seg.id && b.date);
-      if (!segBookings.length) return { ...seg, startDate: null, endDate: null, days: [] };
-
-      const startDate = segBookings.reduce(
-        (min, b) => (!min || b.date < min ? b.date : min), null
-      );
-      const endDate = segBookings.reduce((max, b) => {
-        const e = b.date_end || b.date;
-        return !max || e > max ? e : max;
-      }, null);
-
-      const days = [];
-      let cur = new Date(startDate + "T00:00:00");
-      const end = new Date(endDate + "T00:00:00");
-      while (cur <= end) {
-        const d = toDateStr(cur);
-        days.push({
-          date: d,
-          bookings: segBookings.filter(b =>
-            b.date === d &&
-            b.type !== "hotel" &&
-            b.type !== "flight" &&
-            b.type !== "train"
-          ),
-        });
-        cur.setDate(cur.getDate() + 1);
-      }
-
-      return { ...seg, startDate, endDate, days };
+    // Priority 1: missing hotel in future segments
+    segItems.forEach(({ segment: seg }) => {
+      if (!seg.end_date || seg.end_date < today) return;
+      if (seg.missing_hotel) result.push({
+        id: `auto-hotel-${seg.id}`, title: `Book hotel · ${seg.location}`,
+        category: "book", assignee: identity || "peter", priority: 1, deadline: seg.start_date,
+      });
     });
-  }, [segments, myBookings]);
 
-  // Flat timeline: all transits and segments sorted chronologically.
-  // Transits sort before segments on the same date (arrival before city header).
-  const tripTimeline = useMemo(() => {
-    const transits = myBookings.filter(b => b.type === "flight" || b.type === "train");
-    const items = [
-      ...segmentData.map(seg  => ({ kind: "segment", segment: seg, _date: seg.startDate || "" })),
-      ...transits.map(t       => ({ kind: "transit", b: t,         _date: t.date        || "" })),
-    ];
-    items.sort((a, b) => {
-      if (a._date !== b._date) return a._date.localeCompare(b._date);
-      if (a.kind === "transit" && b.kind === "segment") return -1;
-      if (a.kind === "segment" && b.kind === "transit") return  1;
-      return 0;
+    // Priority 2: missing transport to next future segment
+    segItems.forEach(({ segment: seg }) => {
+      const nextStart = seg.display_end_date || seg.end_date;
+      if (!nextStart || nextStart < today) return;
+      if (seg.missing_transport_next) result.push({
+        id: `auto-transport-${seg.id}`, title: `Book transport from ${seg.location}`,
+        category: "book", assignee: identity || "peter", priority: 2,
+      });
     });
-    return items;
-  }, [segmentData, myBookings]);
 
-  function toggleCard(id) {
-    setExpandedCards(prev => ({ ...prev, [id]: !prev[id] }));
-  }
-
-  function toggleGroup(loc) {
-    setCollapsedGroups(prev => ({ ...prev, [loc]: !prev[loc] }));
-  }
-
-  function platformLink(b) {
-    if (!b.platform && !b.reference) return null;
-    const pl = (b.platform || "").toLowerCase();
-    if (pl.includes("booking.com")) return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(b.name)}`;
-    if (pl.includes("trip.com") || pl.includes("ctrip")) return `https://www.trip.com/`;
-    if (pl.includes("klook")) return `https://www.klook.com/`;
-    if (pl.includes("airbnb")) return `https://www.airbnb.com/`;
-    return null;
-  }
-
-  function mapSearchText(b) {
-    if (b.map_query) return b.map_query;
-    if (b.type === "flight") {
-      return b.origin ? `${b.origin} airport` : b.location ? `${b.location} airport China` : b.name;
+    // Priority 3: missing QR for identity on future bookings (still client-side, identity-dependent)
+    if (identity) {
+      bookings.filter(b => PASS_TYPES.includes(b.type) && b.date >= today).forEach(b => {
+        if (getBookingPasses(b).filter(p => p.who === identity).length === 0)
+          result.push({ id: `auto-qr-${b.id}`, title: `Upload QR · ${b.name}`, category: "tech", assignee: identity, priority: 3 });
+      });
     }
-    if (b.type === "train") {
-      return b.origin ? `${b.origin} railway station` : b.location ? `${b.location} railway station China` : b.name;
-    }
-    return b.location ? `${b.name}, ${b.location}, China` : `${b.name}, China`;
-  }
 
-  function mapTargets(b) {
-    const query = mapSearchText(b);
-    const encodedQuery = encodeURIComponent(query);
-    const name = encodeURIComponent(b.name || query);
-    const lat = b.map_lat ?? b.lat;
-    const lng = b.map_lng ?? b.lng;
-    const hasCoords = lat !== null && lat !== undefined && lng !== null && lng !== undefined && lat !== "" && lng !== "";
-
-    const appUrl = hasCoords
-      ? `androidamap://viewMap?sourceApplication=tripbookings&poiname=${name}&lat=${lat}&lon=${lng}&dev=1`
-      : `androidamap://poi?sourceApplication=tripbookings&keywords=${encodedQuery}&dev=0`;
-
-    const webUrl = hasCoords
-      ? `https://uri.amap.com/marker?position=${lng},${lat}&name=${name}&src=tripbookings`
-      : `https://uri.amap.com/search?keyword=${encodedQuery}&src=tripbookings`;
-
-    return { appUrl, webUrl };
-  }
-
-  function mapsLink(b) {
-    return mapTargets(b).webUrl;
-  }
-
-  function openMapsLink(e, b) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (typeof window === "undefined") return;
-
-    const { appUrl, webUrl } = mapTargets(b);
-
-    // Use Android Intent URL so Chrome opens the app without navigating the
-    // browser tab. If Amap isn't installed, Chrome follows browser_fallback_url.
-    const intentUrl = appUrl.replace(/^androidamap:\/\//, "intent://") +
-      `#Intent;scheme=androidamap;package=com.autonavi.minimap;S.browser_fallback_url=${encodeURIComponent(webUrl)};end`;
-
-    window.location.href = intentUrl;
-  }
+    return result.sort((a, b) => a.priority - b.priority || ((a.deadline || "z") < (b.deadline || "z") ? -1 : 1));
+  })();
 
   const showDateEnd = form.type === "hotel" || form.type === "activity" || form.type === "ticket";
 
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <>
       <Head>
@@ -862,9 +730,9 @@ export default function App() {
                 ) : canWrite ? (
                   <button className="btn" onClick={handleLock} title="Lock" style={{ background: "transparent", color: "#10b981", fontSize: 14, padding: "4px 8px", border: "1px solid #10b98140", borderRadius: 5 }}>🔓</button>
                 ) : (
-                  <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock write access" style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5 }}>🔒</button>
+                  <button className="btn" onClick={() => setShowUnlock(true)} title="Unlock" style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 14, padding: "4px 8px", border: "1px solid var(--border)", borderRadius: 5 }}>🔒</button>
                 )}
-                <button className="btn" onClick={() => setShowIdentityPicker(true)} title="Who are you on this device?"
+                <button className="btn" onClick={() => setShowIdentityPicker(true)}
                   style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 5, padding: "4px 9px", fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: identity ? "var(--text-muted)" : "var(--text-tiny)", letterSpacing: "0.05em" }}>
                   {identity === "peter" ? "P" : identity === "friend" ? (FRIEND_NAME[0] || "F").toUpperCase() : "?"}
                 </button>
@@ -881,7 +749,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Add/Edit Form */}
+          {/* Add / Edit Form */}
           {showForm && (
             <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 20, marginBottom: 24, border: "1px solid var(--border)" }}>
               <div style={{ fontSize: 12, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>{editId ? "Edit booking" : "New booking"}</div>
@@ -937,11 +805,11 @@ export default function App() {
                     </select>
                   </div>
                 )}
-                <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : form.type === "city_transport" ? "To (optional)" : "Location (e.g. Beijing)"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
+                <input placeholder={form.type === "flight" || form.type === "train" ? "To (city or airport)" : form.type === "city_transport" ? "To (optional)" : "Location"} value={form.location} onChange={e => setForm(f => ({ ...f, location: e.target.value }))} style={inp} />
                 <input placeholder="Platform (e.g. Booking.com)" value={form.platform} onChange={e => setForm(f => ({ ...f, platform: e.target.value }))} style={inp} />
                 {(form.type === "flight" || form.type === "train" || form.type === "city_transport") && (
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <input placeholder={form.type === "flight" ? "From (e.g. Copenhagen, PEK)" : form.type === "train" ? "From (e.g. Beijing, BJS)" : "From (optional)"} value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} style={inp} />
+                    <input placeholder={form.type === "flight" ? "From (e.g. Copenhagen, PEK)" : form.type === "train" ? "From (e.g. Beijing)" : "From (optional)"} value={form.origin} onChange={e => setForm(f => ({ ...f, origin: e.target.value }))} style={inp} />
                   </div>
                 )}
                 <div>
@@ -991,7 +859,6 @@ export default function App() {
                   <textarea placeholder="Notes" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ ...inp, resize: "vertical" }} />
                 </div>
               </div>
-              {/* Reminder todo — only on new bookings */}
               {!editId && (
                 <div style={{ borderTop: "1px dashed var(--border)", paddingTop: 12, marginTop: 4 }}>
                   <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
@@ -1004,10 +871,7 @@ export default function App() {
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                         {[{ id: "buy", label: "buy online" }, { id: "book", label: "book in person" }, { id: "prepare", label: "prepare & pack" }].map(rt => (
                           <button key={rt.id} className="btn" onClick={() => setForm(f => ({ ...f, reminderType: rt.id }))}
-                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace",
-                              border: `1.5px solid ${form.reminderType === rt.id ? "var(--accent)" : "var(--border)"}`,
-                              background: form.reminderType === rt.id ? "var(--accent)20" : "transparent",
-                              color: form.reminderType === rt.id ? "var(--accent)" : "var(--text-faint)" }}>
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.reminderType === rt.id ? "var(--accent)" : "var(--border)"}`, background: form.reminderType === rt.id ? "var(--accent)20" : "transparent", color: form.reminderType === rt.id ? "var(--accent)" : "var(--text-faint)" }}>
                             {rt.label}
                           </button>
                         ))}
@@ -1015,10 +879,7 @@ export default function App() {
                       <div style={{ display: "flex", gap: 6 }}>
                         {[{ v: "me", label: `just ${identity || "me"}` }, { v: "both", label: "both of us" }].map(({ v, label }) => (
                           <button key={v} className="btn" onClick={() => setForm(f => ({ ...f, reminderAssignee: v }))}
-                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace",
-                              border: `1.5px solid ${form.reminderAssignee === v ? "var(--accent)" : "var(--border)"}`,
-                              background: form.reminderAssignee === v ? "var(--accent)20" : "transparent",
-                              color: form.reminderAssignee === v ? "var(--accent)" : "var(--text-faint)" }}>
+                            style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1.5px solid ${form.reminderAssignee === v ? "var(--accent)" : "var(--border)"}`, background: form.reminderAssignee === v ? "var(--accent)20" : "transparent", color: form.reminderAssignee === v ? "var(--accent)" : "var(--text-faint)" }}>
                             {label}
                           </button>
                         ))}
@@ -1029,8 +890,8 @@ export default function App() {
               )}
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
                 <button className="btn" onClick={handleCancel} style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)" }}>Cancel</button>
-                <button className="btn" onClick={handleSubmit} disabled={saving || !form.name}
-                  style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: (!form.name || saving) ? 0.5 : 1 }}>
+                <button className="btn" onClick={handleSubmit} disabled={saving || (!form.name && form.type !== "flight" && form.type !== "train")}
+                  style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: saving ? 0.5 : 1 }}>
                   {saving ? "Saving..." : editId ? "Save changes" : "Add booking"}
                 </button>
               </div>
@@ -1042,7 +903,6 @@ export default function App() {
               📡 Offline — showing cached data{cachedAt ? ` from ${new Date(cachedAt).toLocaleString()}` : ""}
             </div>
           )}
-
           {error && (
             <div style={{ background: "var(--surface)", border: "1px solid #7f1d1d", borderRadius: 8, padding: "12px 16px", marginBottom: 20, fontFamily: "'Source Code Pro', monospace", fontSize: 12, color: "var(--text-error)" }}>✗ {error}</div>
           )}
@@ -1050,7 +910,6 @@ export default function App() {
           {/* ── EXPENSES TAB ── */}
           {activeTab === "expenses" && (
             <>
-              {/* Summary buttons */}
               <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginBottom: 16 }}>
                 <button className="btn" onClick={() => { setSummaryMode("expenses"); setShowSummary(true); }}
                   style={{ background: "var(--surface2)", border: "1px solid var(--border)", borderRadius: 6, padding: "7px 14px", fontSize: 12, fontFamily: "'Source Code Pro', monospace", color: "var(--text-muted)", letterSpacing: "0.05em" }}>
@@ -1061,15 +920,13 @@ export default function App() {
                   ⇌ settlement
                 </button>
               </div>
+
               {bookings.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button className="btn" onClick={() => setShowFilters(v => !v)} style={{ background: "transparent", border: "none", padding: 0, display: "flex", alignItems: "center", gap: 5, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em" }}>
                       <span style={{ fontSize: 9, lineHeight: 1 }}>{showFilters ? "▾" : "▸"}</span> filters
                     </button>
-                    {!showFilters && (filterTypes.length > 0 || filterSettled !== "all" || filterTravelers !== "all" || filterPaidBy !== "all") && (
-                      <span style={{ fontSize: 10, color: "var(--accent)", fontFamily: "'Source Code Pro', monospace" }}>●</span>
-                    )}
                   </div>
                   {showFilters && (
                     <>
@@ -1119,7 +976,7 @@ export default function App() {
                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                     const subtypeInfo = b.type === "city_transport" ? CITY_SUBTYPES.find(s => s.id === parseSubtype(b.notes).subtype) : null;
                     return (
-                      <div key={b.id} className="card" style={{ background: b.paid_by ? "var(--surface)" : "var(--surface)", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "var(--text-tiny)"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
+                      <div key={b.id} className="card" style={{ background: "var(--surface)", borderRadius: 8, padding: "14px 16px", borderLeft: `3px solid ${b.paid_by ? t.color : "var(--text-tiny)"}`, position: "relative", opacity: b.paid_by ? 1 : 0.75 }}>
                         {canWrite && (
                           <div className="card-actions" style={{ position: "absolute", top: 12, right: 12, display: "flex", gap: 8, opacity: 0, transition: "opacity 0.15s" }}>
                             {b.paid_by && (b.travelers === "both" || !b.travelers) && (
@@ -1131,7 +988,7 @@ export default function App() {
                               const hasPasses = getBookingPasses(b).length > 0;
                               return (
                                 <button className="btn" onClick={() => handlePassOpen(b)}
-                                  style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 0.9 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }} title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
+                                  style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 0.9 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }}>🎫</button>
                               );
                             })()}
                             <button className="btn" onClick={() => handleEdit(b)} style={{ background: "transparent", color: "var(--text-faint)", fontSize: 14, padding: "2px 4px", fontFamily: "monospace" }}>✎</button>
@@ -1145,7 +1002,6 @@ export default function App() {
                             )}
                           </div>
                         )}
-                        {/* Persistent pass badge — visible even when locked */}
                         {!canWrite && PASS_TYPES.includes(b.type) && identity && getBookingPasses(b).filter(p => p.who === identity).length > 0 && (
                           <button className="btn" onClick={() => handlePassOpen(b)}
                             style={{ position: "absolute", top: 12, right: 12, background: "transparent", fontSize: 14, padding: "2px 4px", border: "none", lineHeight: 1 }}>🎫</button>
@@ -1187,7 +1043,6 @@ export default function App() {
           {/* ── TODOS TAB ── */}
           {activeTab === "todos" && (
             <div>
-              {/* Progress bar */}
               {todos.length > 0 && (() => {
                 const done = todos.filter(t => t.done).length;
                 const pct = Math.round((done / todos.length) * 100);
@@ -1204,7 +1059,6 @@ export default function App() {
                 );
               })()}
 
-              {/* Add todo form */}
               {canWrite && (
                 <div style={{ marginBottom: 18 }}>
                   {!showTodoForm ? (
@@ -1214,14 +1068,10 @@ export default function App() {
                     </button>
                   ) : (
                     <div style={{ background: "var(--surface2)", borderRadius: 10, padding: 16, border: "1px solid var(--border)" }}>
-                      <input
-                        placeholder="What needs doing? *"
-                        value={todoForm.title}
+                      <input placeholder="What needs doing? *" value={todoForm.title}
                         onChange={e => setTodoForm(f => ({ ...f, title: e.target.value }))}
                         onKeyDown={e => e.key === "Enter" && handleAddTodo()}
-                        autoFocus
-                        style={{ ...inp, marginBottom: 10 }}
-                      />
+                        autoFocus style={{ ...inp, marginBottom: 10 }} />
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
                         {TODO_CATS.map(c => (
                           <button key={c.id} className="btn" onClick={() => setTodoForm(f => ({ ...f, category: c.id, segment_id: (c.id === "do" || c.id === "book") ? f.segment_id : null }))}
@@ -1239,22 +1089,20 @@ export default function App() {
                           </button>
                         ))}
                       </div>
-                      {todoForm.assignee === "both" && (
-                        <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginBottom: 12, paddingLeft: 2 }}>creates one task per person</div>
-                      )}
+                      {todoForm.assignee === "both" && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginBottom: 12, paddingLeft: 2 }}>creates one task per person</div>}
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                         <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>by</span>
                         <input type="date" value={todoForm.deadline || ""} onChange={e => setTodoForm(f => ({ ...f, deadline: e.target.value }))}
                           style={{ ...inp, flex: 1, fontSize: 12, colorScheme: "dark" }} />
                         {todoForm.deadline && <button className="btn" onClick={() => setTodoForm(f => ({ ...f, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
                       </div>
-                      {(todoForm.category === "do" || todoForm.category === "book") && segments.length > 0 && (
+                      {(todoForm.category === "do" || todoForm.category === "book") && tripData?.timeline && (
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
                           <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>in</span>
                           <select value={todoForm.segment_id || ""} onChange={e => setTodoForm(f => ({ ...f, segment_id: e.target.value || null }))}
                             style={{ ...inp, flex: 1, fontSize: 12 }}>
                             <option value="">anywhere</option>
-                            {segments.map(s => (
+                            {tripData.timeline.filter(i => i.kind === "segment").map(({ segment: s }) => (
                               <option key={s.id} value={s.id}>{s.location}</option>
                             ))}
                           </select>
@@ -1271,7 +1119,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Filters */}
               {todos.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 20 }}>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -1285,59 +1132,29 @@ export default function App() {
                     ))}
                   </div>
                   {!identity && (
-                  <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 28 }}>for</span>
-                    {["all", "peter", "friend"].map(v => (
-                      <button key={v} className="btn" onClick={() => setTodoFilterAssignee(v)}
-                        style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>
-                        {v === "friend" ? FRIEND_NAME : v}
-                      </button>
-                    ))}
-                  </div>
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", minWidth: 28 }}>for</span>
+                      {["all", "peter", "friend"].map(v => (
+                        <button key={v} className="btn" onClick={() => setTodoFilterAssignee(v)}
+                          style={{ padding: "4px 10px", borderRadius: 5, fontSize: 11, fontFamily: "'Source Code Pro', monospace", border: `1px solid ${todoFilterAssignee === v ? "var(--text)" : "var(--border)"}`, background: todoFilterAssignee === v ? "var(--surface-hover)" : "transparent", color: todoFilterAssignee === v ? "var(--text)" : "var(--text-faint)" }}>
+                          {v === "friend" ? FRIEND_NAME : v}
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
 
-              {/* Todo list */}
               {(() => {
                 const filteredTodos = todos
                   .filter(t => identity ? t.assignee === identity : (todoFilterAssignee === "all" || t.assignee === todoFilterAssignee))
                   .filter(t => todoFilterCat === "all" || t.category === todoFilterCat);
+                const filtAutoTodos = autoTodos
+                  .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
+                  .filter(t => identity ? t.assignee === identity : (todoFilterAssignee === "all" || t.assignee === todoFilterAssignee || t.assignee === "both"));
 
-                // Auto-todos: computed from bookings, never stored
-                const autoTodos = (() => {
-                  const result = [];
-                  // Priority 1: missing hotel per future segment
-                  segmentData.forEach(seg => {
-                    if (!seg.endDate || seg.endDate < today) return;
-                    const hasHotel = myBookings.some(b => b.type === "hotel" && b.segment_id === seg.id);
-                    if (!hasHotel) result.push({ id: `auto-hotel-${seg.id}`, title: `Book hotel · ${seg.location}`, category: "book", assignee: identity || "peter", priority: 1, deadline: seg.startDate });
-                  });
-                  // Priority 2: missing transport between consecutive future segments
-                  for (let i = 0; i < segmentData.length - 1; i++) {
-                    const from = segmentData[i], to = segmentData[i + 1];
-                    if (!to.startDate || to.startDate < today) continue;
-                    const hasTransport = myBookings.some(b => (b.type === "flight" || b.type === "train") && b.location === to.location);
-                    if (!hasTransport) result.push({ id: `auto-transport-${i}`, title: `Book transport · ${from.location} → ${to.location}`, category: "book", assignee: identity || "peter", priority: 2, deadline: from.endDate });
-                  }
-                  // Priority 3: missing QR for current identity on future bookings
-                  if (identity) {
-                    myBookings.filter(b => PASS_TYPES.includes(b.type) && b.date >= today).forEach(b => {
-                      if (getBookingPasses(b).filter(p => p.who === identity).length === 0)
-                        result.push({ id: `auto-qr-${b.id}`, title: `Upload QR · ${b.name}`, category: "tech", assignee: identity, priority: 3 });
-                    });
-                  }
-                  return result
-                    .filter(t => todoFilterCat === "all" || t.category === todoFilterCat)
-                    .filter(t => todoFilterAssignee === "all" || t.assignee === todoFilterAssignee || t.assignee === "both")
-                    .sort((a, b) => a.priority - b.priority || (a.deadline || "z").localeCompare(b.deadline || "z"));
-                })();
-
-                if (todos.length === 0 && autoTodos.length === 0) return (
+                if (todos.length === 0 && filtAutoTodos.length === 0) return (
                   <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO TODOS YET</div>
-                );
-                if (filteredTodos.length === 0 && autoTodos.length === 0) return (
-                  <div style={{ textAlign: "center", padding: "40px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>nothing here</div>
                 );
                 const catsToShow = todoFilterCat === "all"
                   ? TODO_CATS.filter(c => filteredTodos.some(t => t.category === c.id))
@@ -1349,9 +1166,7 @@ export default function App() {
                       if (!catTodos.length) return null;
                       const pending = catTodos.filter(t => !t.done).sort((a, b) => {
                         if (a.deadline && b.deadline) return a.deadline.localeCompare(b.deadline);
-                        if (a.deadline) return -1;
-                        if (b.deadline) return 1;
-                        return 0;
+                        if (a.deadline) return -1; if (b.deadline) return 1; return 0;
                       });
                       const done = catTodos.filter(t => t.done);
                       return (
@@ -1365,13 +1180,9 @@ export default function App() {
                             {[...pending, ...done].map(todo => (
                               editingTodo?.id === todo.id ? (
                                 <div key={todo.id} style={{ background: "var(--surface2)", borderRadius: 7, padding: "12px 14px", border: "1px solid var(--border)" }}>
-                                  <input
-                                    value={editingTodo.title}
-                                    onChange={e => setEditingTodo(t => ({ ...t, title: e.target.value }))}
+                                  <input value={editingTodo.title} onChange={e => setEditingTodo(t => ({ ...t, title: e.target.value }))}
                                     onKeyDown={e => { if (e.key === "Enter") handleSaveEditTodo(); if (e.key === "Escape") setEditingTodo(null); }}
-                                    autoFocus
-                                    style={{ ...inp, marginBottom: 10, fontSize: 13 }}
-                                  />
+                                    autoFocus style={{ ...inp, marginBottom: 10, fontSize: 13 }} />
                                   <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 9 }}>
                                     {TODO_CATS.map(c => (
                                       <button key={c.id} className="btn" onClick={() => setEditingTodo(t => ({ ...t, category: c.id }))}
@@ -1396,14 +1207,12 @@ export default function App() {
                                     {editingTodo.deadline && <button className="btn" onClick={() => setEditingTodo(t => ({ ...t, deadline: "" }))} style={{ background: "transparent", border: "none", color: "var(--text-tiny)", fontSize: 15, padding: "0 2px" }}>×</button>}
                                   </div>
                                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                                    <button className="btn" onClick={() => setEditingTodo(null)}
-                                      style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", fontSize: 11 }}>Cancel</button>
-                                    <button className="btn" onClick={handleSaveEditTodo} disabled={!editingTodo.title.trim()}
-                                      style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !editingTodo.title.trim() ? 0.5 : 1, fontSize: 11 }}>Save</button>
+                                    <button className="btn" onClick={() => setEditingTodo(null)} style={{ ...btnStyle, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border)", fontSize: 11 }}>Cancel</button>
+                                    <button className="btn" onClick={handleSaveEditTodo} disabled={!editingTodo.title.trim()} style={{ ...btnStyle, background: "var(--accent)", color: "#fff", opacity: !editingTodo.title.trim() ? 0.5 : 1, fontSize: 11 }}>Save</button>
                                   </div>
                                 </div>
                               ) : (
-                                <div key={todo.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "10px 14px", opacity: todo.done ? 0.4 : 1, transition: "opacity 0.2s" }}>
+                                <div key={todo.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "10px 14px", opacity: todo.done ? 0.4 : 1 }}>
                                   <button className="btn" onClick={() => handleToggleTodo(todo)}
                                     style={{ width: 18, height: 18, borderRadius: 4, border: `1.5px solid ${todo.done ? "#10b981" : "var(--border2)"}`, background: todo.done ? "#10b98120" : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#10b981", padding: 0 }}>
                                     {todo.done ? "✓" : ""}
@@ -1414,19 +1223,15 @@ export default function App() {
                                   </span>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
                                     {todo.deadline && !todo.done && (
-                                      <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.02em", color: todo.deadline < today ? "#ef4444" : "var(--text-tiny)", background: todo.deadline < today ? "#ef444415" : "transparent", borderRadius: 3, padding: "1px 4px" }}>
+                                      <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: todo.deadline < today ? "#ef4444" : "var(--text-tiny)", background: todo.deadline < today ? "#ef444415" : "transparent", borderRadius: 3, padding: "1px 4px" }}>
                                         {todo.deadline < today ? "overdue" : fmtDateShort(todo.deadline)}
                                       </span>
                                     )}
-                                    {todo.assignee !== "both" && (
-                                      <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee === "friend" ? FRIEND_NAME : todo.assignee}</span>
-                                    )}
+                                    {todo.assignee !== "both" && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{todo.assignee === "friend" ? FRIEND_NAME : todo.assignee}</span>}
                                     {canWrite && (
                                       <>
-                                        <button className="btn" onClick={() => setEditingTodo({ ...todo })}
-                                          style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 13, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>✎</button>
-                                        <button className="btn" onClick={() => handleDeleteTodo(todo.id)}
-                                          style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 16, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>×</button>
+                                        <button className="btn" onClick={() => setEditingTodo({ ...todo })} style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 13, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>✎</button>
+                                        <button className="btn" onClick={() => handleDeleteTodo(todo.id)} style={{ background: "transparent", color: "var(--text-tiny)", fontSize: 16, lineHeight: 1, padding: "0 2px", border: "none", opacity: 0.5 }}>×</button>
                                       </>
                                     )}
                                   </div>
@@ -1437,11 +1242,11 @@ export default function App() {
                         </div>
                       );
                     })}
-                    {autoTodos.length > 0 && (
+                    {filtAutoTodos.length > 0 && (
                       <div style={{ marginTop: filteredTodos.length > 0 ? 4 : 0 }}>
                         <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8, paddingTop: 16, borderTop: filteredTodos.length > 0 ? "1px solid var(--border)" : "none" }}>suggested</div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                          {autoTodos.map(t => (
+                          {filtAutoTodos.map(t => (
                             <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, background: "var(--surface)", borderRadius: 7, padding: "9px 14px", border: "1px dashed var(--border)", opacity: 0.65 }}>
                               <span style={{ fontSize: 13, flexShrink: 0 }}>{TODO_CATS.find(c => c.id === t.category)?.icon}</span>
                               <span style={{ flex: 1, fontSize: 13, color: "var(--text-faint)", fontFamily: "'Georgia', serif", lineHeight: 1.4 }}>{t.title}</span>
@@ -1464,43 +1269,20 @@ export default function App() {
           {/* ── TRIP TAB ── */}
           {activeTab === "trip" && (
             <div style={{ position: "relative" }}>
-              {/* Floating "today" button */}
-              <button
-                onClick={() => todayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
-                style={{
-                  position: "fixed",
-                  bottom: 28,
-                  right: 20,
-                  zIndex: 200,
-                  background: "var(--accent)",
-                  color: "#fff",
-                  border: "none",
-                  borderRadius: 20,
-                  padding: "8px 16px",
-                  fontFamily: "'Source Code Pro', monospace",
-                  fontSize: 11,
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  cursor: "pointer",
-                  boxShadow: "0 2px 12px rgba(14,165,233,0.45)",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block", flexShrink: 0 }} />
-                today
+              <button onClick={() => todayRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                style={{ position: "fixed", bottom: 28, right: 20, zIndex: 200, background: "var(--accent)", color: "#fff", border: "none", borderRadius: 20, padding: "8px 16px", fontFamily: "'Source Code Pro', monospace", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", boxShadow: "0 2px 12px rgba(14,165,233,0.45)", display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fff", display: "inline-block", flexShrink: 0 }} /> today
               </button>
-              {loading ? (
+
+              {!tripData ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>LOADING...</div>
-              ) : segmentData.length === 0 ? (
+              ) : tripData.timeline.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "60px 0", color: "var(--border)", fontFamily: "'Source Code Pro', monospace", fontSize: 12, letterSpacing: "0.1em" }}>NO BOOKINGS YET</div>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                  {tripTimeline.map((item, timelineIdx) => {
+                  {tripData.timeline.map((item, timelineIdx) => {
                     if (item.kind === "transit") {
-                      const b = item.b;
+                      const b = item.booking;
                       const t = TYPES.find(tt => tt.id === b.type) || TYPES[0];
                       const isPastTransit = (b.date || "") < today;
                       const isExpanded = expandedCards[b.id];
@@ -1510,8 +1292,7 @@ export default function App() {
                       const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
                       return (
                         <div key={`transit-${b.id}`} style={{ marginBottom: 20, opacity: isPastTransit ? 0.45 : 1 }}>
-                          {/* Transit card */}
-                          <div className="trip-card" onClick={() => hasDetails && toggleCard(b.id)}
+                          <div className="trip-card" onClick={() => hasDetails && setExpandedCards(p => ({ ...p, [b.id]: !p[b.id] }))}
                             style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
                             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -1522,17 +1303,17 @@ export default function App() {
                                 <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", whiteSpace: "nowrap" }}>{fmtDateShort(b.date)}</span>
                                 {showPassBtn && (
                                   <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
-                                    style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }} title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
+                                    style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }}>🎫</button>
                                 )}
                                 {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                               </div>
                             </div>
                             {isExpanded && (
                               <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
-                                {b.time && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>dep</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span></div>}
-                                {b.price && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>cost</span><span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span></div>}
-                                {b.reference && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
-                                {b.platform && <div style={{ display: "flex", gap: 6, alignItems: "center" }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
+                                {b.time && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>dep</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span></div>}
+                                {b.price && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>cost</span><span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span></div>}
+                                {b.reference && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
+                                {b.platform && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
                                 {b.notes && <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{b.notes}</div>}
                                 <DetailPills booking={b} onOpenModal={() => setDetailsModal(b)} />
                                 <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
@@ -1541,7 +1322,7 @@ export default function App() {
                                   {platformLink(b) && <a href={platformLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>↗ {b.platform}</a>}
                                   {canWrite && PASS_TYPES.includes(b.type) && (
                                     <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                                      {(["peter", "friend"]).filter(who => b.travelers === "both" || b.travelers === who).map(who => {
+                                      {["peter", "friend"].filter(who => b.travelers === "both" || b.travelers === who).map(who => {
                                         const wPasses = getBookingPasses(b).filter(p => p.who === who);
                                         const initial = (who === "friend" ? FRIEND_NAME : who)[0]?.toUpperCase();
                                         return (
@@ -1557,32 +1338,25 @@ export default function App() {
                               </div>
                             )}
                           </div>
-                          {/* Arrow into next location */}
                           <div style={{ textAlign: "center", marginTop: 10, color: "var(--border)", fontSize: 10, lineHeight: 1 }}>▼</div>
                         </div>
                       );
                     }
-                    const { segment } = item;
-                    // Show the departure transit's date as the location end date (more natural than checkout-minus-one)
-                    const nextItem = tripTimeline[timelineIdx + 1];
-                    const displayEndDate = (nextItem?.kind === "transit" && nextItem.b.date >= segment.startDate) ? nextItem.b.date : segment.endDate;
-                    const isPast = segment.endDate && segment.endDate < today;
-                    const isActive = segment.startDate && segment.startDate <= today && today <= (displayEndDate || segment.endDate);
-                    const isCollapsed = collapsedGroups[segment.id];
-                    const hotelBookings = myBookings.filter(b => b.type === "hotel" && b.segment_id === segment.id);
 
-                    const vibeImg = locationImages[segment.location];
+                    // Segment item
+                    const { segment } = item;
+                    const isPast     = segment.is_past;
+                    const isActive   = segment.is_active;
+                    const isCollapsed = collapsedGroups[segment.id];
+                    const vibeImg    = locationImages[segment.location];
+                    const segExp     = summaryData?.by_segment?.[segment.id];
 
                     return (
                       <div key={segment.id} style={{ marginBottom: 28, opacity: isPast ? 0.45 : 1, background: "var(--surface2)", border: `2px solid ${isActive ? "rgba(14,165,233,0.35)" : "var(--border2)"}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 2px 20px rgba(0,0,0,0.07)" }}>
                         {/* Segment header */}
-                        <div
-                          onClick={() => toggleGroup(segment.id)}
-                          style={{ position: "relative", overflow: "hidden", cursor: "pointer", minHeight: 88, borderBottom: isCollapsed ? "none" : "1px solid var(--border)" }}
-                        >
-                          {vibeImg && (
-                            <div className="hero-img" style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center" }} />
-                          )}
+                        <div onClick={() => setCollapsedGroups(p => ({ ...p, [segment.id]: !p[segment.id] }))}
+                          style={{ position: "relative", overflow: "hidden", cursor: "pointer", minHeight: 88, borderBottom: isCollapsed ? "none" : "1px solid var(--border)" }}>
+                          {vibeImg && <div className="hero-img" style={{ position: "absolute", inset: 0, backgroundImage: `url(${vibeImg})`, backgroundSize: "cover", backgroundPosition: "center" }} />}
                           <div style={{ position: "absolute", inset: 0, background: "var(--hero-overlay)" }} />
                           <div style={{ position: "relative", padding: "16px 18px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                             <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
@@ -1591,167 +1365,129 @@ export default function App() {
                                 <div style={{ display: "inline-flex", alignItems: "center", background: "rgba(14,165,233,0.12)", border: "1px solid rgba(14,165,233,0.22)", borderRadius: 4, padding: "1px 8px", marginBottom: 7 }}>
                                   <span style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase" }}>stop</span>
                                 </div>
-                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>
-                                  {segment.location}
-                                </div>
+                                <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 24, fontWeight: 700, color: "var(--text)", letterSpacing: "-0.01em", lineHeight: 1.2 }}>{segment.location}</div>
                                 <div style={{ fontSize: 11, color: isActive ? "var(--accent)" : "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", marginTop: 4, letterSpacing: "0.04em" }}>
-                                  {fmtDateShort(segment.startDate)}{segment.startDate !== displayEndDate ? ` – ${fmtDateShort(displayEndDate)}` : ""}
+                                  {fmtDateShort(segment.start_date)}{segment.start_date !== segment.display_end_date ? ` – ${fmtDateShort(segment.display_end_date)}` : ""}
                                   {isActive && " · now"}
                                 </div>
                               </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, marginTop: 2 }}>
-                              <button
-                                className="btn"
+                              <button className="btn"
                                 onClick={e => { e.stopPropagation(); setSegmentExpenseOpen(prev => prev === segment.id ? null : segment.id); }}
-                                style={{ background: segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.15)" : "rgba(255,255,255,0.06)", border: `1px solid ${segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.3)" : "var(--border)"}`, borderRadius: 5, color: segmentExpenseOpen === segment.id ? "var(--accent)" : "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px", letterSpacing: "0.06em", lineHeight: 1.6 }}
-                              >¥ costs</button>
+                                style={{ background: segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.15)" : "rgba(255,255,255,0.06)", border: `1px solid ${segmentExpenseOpen === segment.id ? "rgba(14,165,233,0.3)" : "var(--border)"}`, borderRadius: 5, color: segmentExpenseOpen === segment.id ? "var(--accent)" : "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px", letterSpacing: "0.06em", lineHeight: 1.6 }}>¥ costs</button>
                               <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{isCollapsed ? "▸" : "▾"}</span>
                             </div>
                           </div>
                         </div>
 
-                        {/* Segment expense summary panel */}
-                        {segmentExpenseOpen === segment.id && (() => {
-                          const segBks = myBookings.filter(b =>
-                            b.segment_id === segment.id && EXPENSE_TYPES.includes(b.type) && b.price
-                          );
-                          const toDKK = (amt, cur) => {
-                            if (!cur || cur === "DKK") return amt;
-                            if (!rates?.rates?.[cur]) return null;
-                            return amt / rates.rates[cur];
-                          };
-                          // Per type: { total, approx }
-                          const byType = {};
-                          let grandTotal = 0, grandApprox = false;
-                          segBks.forEach(b => {
-                            const amt = parseFloat(b.price) || 0;
-                            const dkk = toDKK(amt, b.currency || "USD");
-                            if (!byType[b.type]) byType[b.type] = { total: 0, approx: false };
-                            if (dkk === null) { byType[b.type].approx = true; grandApprox = true; }
-                            else { byType[b.type].total += dkk; grandTotal += dkk; }
-                          });
-                          const activeTypes = TYPES.filter(t => EXPENSE_TYPES.includes(t.id) && byType[t.id]);
-                          return (
-                            <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px 14px", background: "rgba(14,165,233,0.04)" }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                                <div style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase" }}>costs · {segment.location}</div>
-                                <button className="btn" onClick={fetchRates} disabled={ratesLoading}
-                                  style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 9, fontFamily: "'Source Code Pro', monospace", padding: "1px 7px" }}>
-                                  {ratesLoading ? "…" : "↻ rates"}
-                                </button>
+                        {/* Segment expense panel — data comes from /api/summary */}
+                        {segmentExpenseOpen === segment.id && (
+                          <div style={{ borderTop: "1px solid var(--border)", padding: "12px 16px 14px", background: "rgba(14,165,233,0.04)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                              <div style={{ fontSize: 9, fontFamily: "'Source Code Pro', monospace", color: "var(--accent)", letterSpacing: "0.15em", textTransform: "uppercase" }}>costs · {segment.location}</div>
+                              <button className="btn" onClick={fetchSummary} disabled={summaryLoading}
+                                style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 9, fontFamily: "'Source Code Pro', monospace", padding: "1px 7px" }}>
+                                {summaryLoading ? "…" : "↻ rates"}
+                              </button>
+                            </div>
+                            {!segExp ? (
+                              <div style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                                {summaryLoading ? "loading…" : summaryData ? "no expenses yet" : "loading rates…"}
                               </div>
-                              {segBks.length === 0 ? (
-                                <div style={{ fontSize: 12, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no expenses yet</div>
-                              ) : !rates && ratesLoading ? (
-                                <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>loading rates…</div>
-                              ) : (
-                                <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                                  {activeTypes.map(t => (
-                                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                        <span style={{ fontSize: 11 }}>{t.icon}</span>
-                                        <span style={{ fontSize: 10, color: t.color, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" }}>{t.label}</span>
-                                      </div>
-                                      <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                        {byType[t.id].approx ? "~" : ""}{Math.round(byType[t.id].total)} DKK
-                                      </span>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                                {TYPES.filter(t => EXPENSE_TYPES.includes(t.id) && segExp.by_type?.[t.id]).map(t => (
+                                  <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                      <span style={{ fontSize: 11 }}>{t.icon}</span>
+                                      <span style={{ fontSize: 10, color: t.color, fontFamily: "'Source Code Pro', monospace", letterSpacing: "0.05em" }}>{t.label}</span>
                                     </div>
-                                  ))}
-                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0 0", marginTop: 4, borderTop: "1px solid var(--border)" }}>
-                                    <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>total</span>
-                                    <span style={{ fontSize: 13, color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontWeight: 600 }}>
-                                      {grandApprox ? "~" : ""}{Math.round(grandTotal)} DKK
+                                    <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
+                                      {segExp.by_type[t.id].approx ? "~" : "≈"}{Math.round(segExp.by_type[t.id].total_dkk)} DKK
                                     </span>
                                   </div>
+                                ))}
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0 0", marginTop: 4, borderTop: "1px solid var(--border)" }}>
+                                  <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>total</span>
+                                  <span style={{ fontSize: 13, color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontWeight: 600 }}>
+                                    {segExp.approx ? "~" : "≈"}{Math.round(segExp.total_dkk)} DKK
+                                  </span>
                                 </div>
-                              )}
-                            </div>
-                          );
-                        })()}
+                              </div>
+                            )}
+                          </div>
+                        )}
 
                         {!isCollapsed && (
                           <div style={{ position: "relative", padding: "14px 14px 14px 34px", display: "flex", flexDirection: "column", gap: 0 }}>
                             <div style={{ position: "absolute", left: 16, top: 10, bottom: 10, width: 2, background: "var(--border)", borderRadius: 1 }} />
-                            {/* Hotel banners */}
-                            {hotelBookings.map(hotelBooking => (
-                              <div key={hotelBooking.id} style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+
+                            {/* Hotel banner */}
+                            {segment.hotel && (
+                              <div style={{ background: "var(--hotel-bg)", border: "1px solid var(--hotel-border)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                   <span style={{ fontSize: 13 }}>🏨</span>
-                                  <span style={{ fontSize: 13, color: "var(--hotel-text)", fontFamily: "'Georgia', serif" }}>{hotelBooking.name}</span>
+                                  <span style={{ fontSize: 13, color: "var(--hotel-text)", fontFamily: "'Georgia', serif" }}>{segment.hotel.name}</span>
                                 </div>
                                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                                  {hotelBooking.date_end && (
+                                  {segment.hotel.date_end && (
                                     <span style={{ fontSize: 10, color: "var(--hotel-text)", fontFamily: "'Source Code Pro', monospace" }}>
-                                      {fmtDateShort(hotelBooking.date)} → {fmtDateShort(hotelBooking.date_end)}
+                                      {fmtDateShort(segment.hotel.date)} → {fmtDateShort(segment.hotel.date_end)}
                                     </span>
                                   )}
-                                  {(hotelBooking.time || hotelBooking.time_end) && (
+                                  {(segment.hotel.time || segment.hotel.time_end) && (
                                     <span style={{ fontSize: 10, color: "var(--hotel-text)", fontFamily: "'Source Code Pro', monospace", opacity: 0.75 }}>
-                                      {hotelBooking.time && `in ${hotelBooking.time}`}{hotelBooking.time && hotelBooking.time_end && " · "}{hotelBooking.time_end && `out ${hotelBooking.time_end}`}
+                                      {segment.hotel.time && `in ${segment.hotel.time}`}{segment.hotel.time && segment.hotel.time_end && " · "}{segment.hotel.time_end && `out ${segment.hotel.time_end}`}
                                     </span>
                                   )}
-                                  <a href={mapsLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
+                                  <a href={mapsLink(segment.hotel)} target="_blank" rel="noopener noreferrer"
                                     style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
-                                    onClick={e => openMapsLink(e, hotelBooking)}>map ↗</a>
-                                  <CopyButton text={hotelBooking.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} style={{ fontSize: 10, padding: "2px 7px" }} />
-                                  {hotelBooking.details && Object.values(hotelBooking.details).some(Boolean) && (
-                                    <button className="btn" onClick={e => { e.stopPropagation(); setDetailsModal(hotelBooking); }}
-                                      style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px", background: "transparent" }}>ⓘ</button>
+                                    onClick={e => openMapsLink(e, segment.hotel)}>map ↗</a>
+                                  <CopyButton text={segment.hotel.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} style={{ fontSize: 10, padding: "2px 7px" }} />
+                                  {segment.hotel.details && Object.values(segment.hotel.details).some(Boolean) && (
+                                    <button className="btn" onClick={e => { e.stopPropagation(); setDetailsModal(segment.hotel); }}
+                                      style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px", background: "transparent" }}>ⓘ</button>
                                   )}
-                                  {platformLink(hotelBooking) && (
-                                    <a href={platformLink(hotelBooking)} target="_blank" rel="noopener noreferrer"
+                                  {platformLink(segment.hotel) && (
+                                    <a href={platformLink(segment.hotel)} target="_blank" rel="noopener noreferrer"
                                       style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "2px 7px" }}
                                       onClick={e => e.stopPropagation()}>booking ↗</a>
                                   )}
                                 </div>
                               </div>
-                            ))}
+                            )}
 
                             {/* Days */}
-                            {segment.days.map(({ date: d, bookings: dayBks }) => {
-                              const isToday = d === today;
-                              const nonHotel = dayBks.filter(b => b.type !== "hotel" && b.type !== "flight" && b.type !== "train");
-                              const foodBks = nonHotel.filter(b => b.type === "food");
-                              const transitBks = nonHotel.filter(b => b.type === "city_transport");
-                              const otherBks = nonHotel.filter(b => b.type !== "food" && b.type !== "city_transport");
-                              const isFoodExpanded = expandedFoodDays[d];
-                              const isTransitExpanded = expandedTransitDays[d];
+                            {segment.days.map(day => {
+                              const isToday = day.is_today;
+                              // Apply identity filter to day bookings
+                              const otherBks = day.other_bookings.filter(b => travelerMatch(b, identity));
+                              const foodItems = day.food.items.filter(b => travelerMatch(b, identity));
+                              const transitItems = day.city_transport.items.filter(b => travelerMatch(b, identity));
+                              const isFoodExpanded    = expandedFoodDays[day.date];
+                              const isTransitExpanded = expandedTransitDays[day.date];
 
-                              // Food summary line
-                              const foodByCurrency = foodBks.reduce((acc, b) => {
-                                if (!b.price || !b.currency) return acc;
-                                acc[b.currency] = (acc[b.currency] || 0) + parseFloat(b.price);
-                                return acc;
-                              }, {});
-                              const foodSummary = Object.entries(foodByCurrency)
-                                .map(([c, v]) => `${v.toFixed(0)} ${c}`).join(" + ");
+                              // Re-compute per-currency summaries for identity-filtered items
+                              function localSummary(items) {
+                                const byCur = {};
+                                items.forEach(b => { if (b.price && b.currency) byCur[b.currency] = (byCur[b.currency] || 0) + parseFloat(b.price); });
+                                return Object.entries(byCur).sort(([a],[b]) => a < b ? -1 : 1).map(([c,v]) => `${Math.round(v)} ${c}`).join(" + ");
+                              }
 
-                              // Transit summary line
-                              const transitByCurrency = transitBks.reduce((acc, b) => {
-                                if (!b.price || !b.currency) return acc;
-                                acc[b.currency] = (acc[b.currency] || 0) + parseFloat(b.price);
-                                return acc;
-                              }, {});
-                              const transitSummary = Object.entries(transitByCurrency)
-                                .map(([c, v]) => `${v.toFixed(0)} ${c}`).join(" + ");
-
-                              if (otherBks.length === 0 && foodBks.length === 0 && transitBks.length === 0 && !isToday) return null;
+                              if (otherBks.length === 0 && foodItems.length === 0 && transitItems.length === 0 && !isToday) return null;
 
                               return (
-                                <div key={d} ref={isToday ? todayRef : null} style={{ marginBottom: 12 }}>
-                                  {/* Day header */}
+                                <div key={day.date} ref={isToday ? todayRef : null} style={{ marginBottom: 12 }}>
                                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                                     {isToday && <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--accent)", display: "inline-block" }} />}
                                     <span style={{ fontSize: 11, fontFamily: "'Source Code Pro', monospace", color: isToday ? "var(--accent)" : "var(--text-tiny)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                                      {fmtDate(d)}{isToday ? " · today" : ""}
+                                      {fmtDate(day.date)}{isToday ? " · today" : ""}
                                     </span>
                                   </div>
-
-                                  {otherBks.length === 0 && foodBks.length === 0 && (
+                                  {otherBks.length === 0 && foodItems.length === 0 && (
                                     <div style={{ fontSize: 11, color: "var(--border)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 14 }}>—</div>
                                   )}
-
                                   {otherBks.map(b => {
                                     const t = TYPES.find(t => t.id === b.type) || TYPES[0];
                                     const isExpanded = expandedCards[b.id];
@@ -1761,8 +1497,7 @@ export default function App() {
                                     const showPassBtn = PASS_TYPES.includes(b.type) && (canWrite || (identity && myPasses.length > 0) || (!identity && hasPasses));
                                     const isTransport = b.type === "flight" || b.type === "train" || b.type === "city_transport";
                                     return (
-                                      <div key={b.id} className="trip-card"
-                                        onClick={() => hasDetails && toggleCard(b.id)}
+                                      <div key={b.id} className="trip-card" onClick={() => hasDetails && setExpandedCards(p => ({ ...p, [b.id]: !p[b.id] }))}
                                         style={{ background: "var(--surface)", borderRadius: 7, padding: "10px 14px", marginBottom: 6, borderLeft: `3px solid ${t.color}`, cursor: hasDetails ? "pointer" : "default" }}>
                                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0 }}>
@@ -1770,71 +1505,35 @@ export default function App() {
                                             <span style={{ fontSize: 13.5, color: "var(--text)", fontFamily: "'Georgia', serif", lineHeight: 1.3 }}>{b.name}</span>
                                           </div>
                                           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                            {b.price && b.type !== "activity" && (
-                                              <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>
-                                            )}
+                                            {b.price && b.type !== "activity" && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{fmt(b.price, b.currency)}</span>}
                                             {showPassBtn && (
                                               <button className="btn" onClick={e => { e.stopPropagation(); handlePassOpen(b); }}
-                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }}
-                                                title={myPasses.length > 0 ? "View pass" : "Add pass"}>🎫</button>
+                                                style={{ background: "transparent", fontSize: 14, padding: "0 2px", border: "none", opacity: myPasses.length > 0 ? 1 : hasPasses ? 0.4 : 0.25, lineHeight: 1 }}>🎫</button>
                                             )}
                                             {hasDetails && <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isExpanded ? "▲" : "▼"}</span>}
                                           </div>
                                         </div>
-                                        {/* Transport: origin → dest + times always visible */}
                                         {isTransport && (b.origin || b.location || b.time) && (
                                           <div style={{ display: "flex", gap: 10, marginTop: 4, paddingLeft: 22, flexWrap: "wrap" }}>
-                                            {(b.origin || b.location) && (
-                                              <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>
-                                                {b.origin && b.location ? `${b.origin} → ${b.location}` : b.origin || b.location}
-                                              </span>
-                                            )}
-                                            {b.time && (
-                                              <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                                {b.time}{b.time_end ? ` → ${b.time_end}` : ""}
-                                              </span>
-                                            )}
+                                            {(b.origin || b.location) && <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{b.origin && b.location ? `${b.origin} → ${b.location}` : b.origin || b.location}</span>}
+                                            {b.time && <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` → ${b.time_end}` : ""}</span>}
                                           </div>
                                         )}
-                                        {/* Non-transport with time */}
-                                        {!isTransport && b.time && (
-                                          <div style={{ paddingLeft: 22, marginTop: 3 }}>
-                                            <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                              {b.time}{b.time_end ? ` – ${b.time_end}` : ""}
-                                            </span>
-                                          </div>
-                                        )}
+                                        {!isTransport && b.time && <div style={{ paddingLeft: 22, marginTop: 3 }}><span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.time}{b.time_end ? ` – ${b.time_end}` : ""}</span></div>}
                                         {isExpanded && (
                                           <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 6 }}>
                                             {b.date_end && <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>until {fmtDate(b.date_end)}</div>}
-                                            {b.reference && (
-                                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                                <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span>
-                                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span>
-                                              </div>
-                                            )}
-                                            {b.platform && (
-                                              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                                                <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span>
-                                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span>
-                                              </div>
-                                            )}
+                                            {b.reference && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>ref</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.reference}</span></div>}
+                                            {b.platform && <div style={{ display: "flex", gap: 6 }}><span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>via</span><span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{b.platform}</span></div>}
                                             {(() => { const n = b.type === "city_transport" ? parseSubtype(b.notes).cleanNotes : b.notes; return n ? <div style={{ fontSize: 12, color: "var(--text-faint)", fontStyle: "italic", lineHeight: 1.5 }}>{n}</div> : null; })()}
                                             <DetailPills booking={b} onOpenModal={() => setDetailsModal(b)} />
                                             <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
-                                              <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer"
-                                                style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
-                                                onClick={e => openMapsLink(e, b)}>📍 maps</a>
+                                              <a href={mapsLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => openMapsLink(e, b)}>📍 maps</a>
                                               <CopyButton text={b.map_query} onCopy={ok => showToast(ok ? "Address copied" : "Copy failed", ok)} />
-                                              {platformLink(b) && (
-                                                <a href={platformLink(b)} target="_blank" rel="noopener noreferrer"
-                                                  style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }}
-                                                  onClick={e => e.stopPropagation()}>↗ {b.platform}</a>
-                                              )}
-                                              {/* Pass management (canWrite): add pass per person */}
+                                              {platformLink(b) && <a href={platformLink(b)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textDecoration: "none", border: "1px solid var(--border)", borderRadius: 4, padding: "3px 8px" }} onClick={e => e.stopPropagation()}>↗ {b.platform}</a>}
                                               {canWrite && PASS_TYPES.includes(b.type) && (
                                                 <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                                                  {(["peter", "friend"]).filter(who => b.travelers === "both" || b.travelers === who).map(who => {
+                                                  {["peter", "friend"].filter(who => b.travelers === "both" || b.travelers === who).map(who => {
                                                     const wPasses = getBookingPasses(b).filter(p => p.who === who);
                                                     const initial = (who === "friend" ? FRIEND_NAME : who)[0]?.toUpperCase();
                                                     return (
@@ -1854,21 +1553,18 @@ export default function App() {
                                   })}
 
                                   {/* Food one-liner */}
-                                  {foodBks.length > 0 && (
+                                  {foodItems.length > 0 && (
                                     <div>
-                                      <div className="trip-card"
-                                        onClick={() => setExpandedFoodDays(p => ({ ...p, [d]: !p[d] }))}
+                                      <div className="trip-card" onClick={() => setExpandedFoodDays(p => ({ ...p, [day.date]: !p[day.date] }))}
                                         style={{ background: "var(--surface)", borderRadius: 7, padding: "8px 14px", marginBottom: isFoodExpanded ? 0 : 6, borderLeft: "3px solid #e879f9", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                           <span style={{ fontSize: 13 }}>🍜</span>
-                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                            {foodBks.length} {foodBks.length === 1 ? "meal" : "meals"}
-                                          </span>
-                                          {foodSummary && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {foodSummary}</span>}
+                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{foodItems.length} {foodItems.length === 1 ? "meal" : "meals"}</span>
+                                          {localSummary(foodItems) && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {localSummary(foodItems)}</span>}
                                         </div>
                                         <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isFoodExpanded ? "▲" : "▼"}</span>
                                       </div>
-                                      {isFoodExpanded && foodBks.map(b => (
+                                      {isFoodExpanded && foodItems.map(b => (
                                         <div key={b.id} style={{ background: "var(--surface2)", borderRadius: "0 0 6px 6px", padding: "7px 14px 7px 40px", marginBottom: 2, borderLeft: "3px solid #e879f920", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                                           <span style={{ fontSize: 12.5, color: "var(--text-muted)", fontFamily: "'Georgia', serif" }}>{b.name}</span>
                                           {b.price && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace", flexShrink: 0 }}>{fmt(b.price, b.currency)}</span>}
@@ -1878,24 +1574,21 @@ export default function App() {
                                   )}
 
                                   {/* City transport one-liner */}
-                                  {transitBks.length > 0 && (
+                                  {transitItems.length > 0 && (
                                     <div>
-                                      <div className="trip-card"
-                                        onClick={() => setExpandedTransitDays(p => ({ ...p, [d]: !p[d] }))}
+                                      <div className="trip-card" onClick={() => setExpandedTransitDays(p => ({ ...p, [day.date]: !p[day.date] }))}
                                         style={{ background: "var(--surface)", borderRadius: 7, padding: "8px 14px", marginBottom: isTransitExpanded ? 0 : 6, borderLeft: "3px solid #06b6d4", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                           <span style={{ fontSize: 13 }}>🚇</span>
-                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>
-                                            {transitBks.length} {transitBks.length === 1 ? "ride" : "rides"}
-                                          </span>
-                                          {transitSummary && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {transitSummary}</span>}
+                                          <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{transitItems.length} {transitItems.length === 1 ? "ride" : "rides"}</span>
+                                          {localSummary(transitItems) && <span style={{ fontSize: 12, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>· {localSummary(transitItems)}</span>}
                                         </div>
                                         <span style={{ fontSize: 9, color: "var(--text-tiny)" }}>{isTransitExpanded ? "▲" : "▼"}</span>
                                       </div>
-                                      {isTransitExpanded && transitBks.map(b => {
+                                      {isTransitExpanded && transitItems.map(b => {
                                         const { subtype, cleanNotes } = parseSubtype(b.notes);
                                         const subtypeInfo = CITY_SUBTYPES.find(s => s.id === subtype);
-                                        const icon = subtypeInfo?.icon || "🚇";
+                                        const icon  = subtypeInfo?.icon || "🚇";
                                         const label = b.name || cleanNotes || subtypeInfo?.label || "Transit";
                                         return (
                                           <div key={b.id} style={{ background: "var(--surface2)", borderRadius: "0 0 6px 6px", padding: "7px 14px 7px 40px", marginBottom: 2, borderLeft: "3px solid #06b6d420", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
@@ -1912,12 +1605,10 @@ export default function App() {
                                 </div>
                               );
                             })}
-                            {/* Segment todos (Phase 3) */}
+
+                            {/* Segment todos */}
                             {(() => {
-                              const segTodos = todos.filter(t => t.segment_id === segment.id);
-                              const mySegTodos = identity
-                                ? segTodos.filter(t => t.assignee === identity || t.assignee === "both")
-                                : segTodos;
+                              const mySegTodos = segment.todos.filter(t => identity ? t.assignee === identity || t.assignee === "both" : true);
                               if (!mySegTodos.length) return null;
                               return (
                                 <div style={{ marginTop: 10, borderTop: "1px dashed var(--border)", paddingTop: 10 }}>
@@ -1926,9 +1617,7 @@ export default function App() {
                                     <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, paddingLeft: 2 }}>
                                       <input type="checkbox" checked={t.done} onChange={() => handleToggleTodo(t)}
                                         style={{ accentColor: "var(--accent)", width: 14, height: 14, flexShrink: 0 }} />
-                                      <span style={{ fontSize: 13, color: t.done ? "var(--text-tiny)" : "var(--text-muted)", fontFamily: "'Georgia', serif", textDecoration: t.done ? "line-through" : "none" }}>
-                                        {t.title}
-                                      </span>
+                                      <span style={{ fontSize: 13, color: t.done ? "var(--text-tiny)" : "var(--text-muted)", fontFamily: "'Georgia', serif", textDecoration: t.done ? "line-through" : "none" }}>{t.title}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -1944,7 +1633,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ── DETAILS MODAL (seat/car/gate/room + address) ── */}
+          {/* ── DETAILS MODAL ── */}
           {detailsModal && (
             <div onClick={() => setDetailsModal(null)}
               style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}>
@@ -1952,7 +1641,7 @@ export default function App() {
                 style={{ background: "var(--surface)", borderRadius: 14, padding: "24px 22px", maxWidth: 340, width: "90%", border: "1px solid var(--border)" }}>
                 <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 18, marginBottom: 14, color: "var(--text)" }}>{detailsModal.name}</div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {Object.entries(detailsModal.details || {}).filter(([, v]) => v).map(([k, v]) => (
+                  {Object.entries(detailsModal.details || {}).filter(([,v]) => v).map(([k, v]) => (
                     <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.06em" }}>{detailLabel(k)}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1972,14 +1661,12 @@ export default function App() {
                   )}
                 </div>
                 <button className="btn" onClick={() => setDetailsModal(null)}
-                  style={{ marginTop: 18, width: "100%", padding: "9px 0", borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>
-                  Close
-                </button>
+                  style={{ marginTop: 18, width: "100%", padding: "9px 0", borderRadius: 8, background: "var(--surface2)", border: "1px solid var(--border)", color: "var(--text)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>Close</button>
               </div>
             </div>
           )}
 
-          {/* ── IDENTITY PICKER MODAL ── */}
+          {/* ── IDENTITY PICKER ── */}
           {showIdentityPicker && (
             <div onClick={() => setShowIdentityPicker(false)}
               style={{ position: "fixed", inset: 0, zIndex: 3000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" }}>
@@ -2007,7 +1694,7 @@ export default function App() {
             </div>
           )}
 
-          {/* ── PASS VIEWER MODAL ── */}
+          {/* ── PASS VIEWER ── */}
           {passViewer && (() => {
             const passes = passViewer.passes || [];
             const idx = passViewer.idx ?? 0;
@@ -2016,27 +1703,18 @@ export default function App() {
             return (
               <div onClick={() => setPassViewer(null)}
                 style={{ position: "fixed", inset: 0, zIndex: 2000, background: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                <canvas
-                  ref={passCanvasRef}
-                  onClick={e => e.stopPropagation()}
-                  style={{ maxWidth: "92%", maxHeight: "70vh", objectFit: "contain" }}
-                />
+                <canvas ref={passCanvasRef} onClick={e => e.stopPropagation()} style={{ maxWidth: "92%", maxHeight: "70vh", objectFit: "contain" }} />
                 {hasMultiple && (
                   <div onClick={e => e.stopPropagation()} style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 18 }}>
-                    <button className="btn"
-                      onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.max(0, prev.idx - 1) }))}
-                      disabled={idx === 0}
+                    <button className="btn" onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.max(0, prev.idx - 1) }))} disabled={idx === 0}
                       style={{ background: "#00000010", border: "1px solid #00000018", borderRadius: 7, padding: "7px 16px", fontSize: 17, color: "#000", opacity: idx === 0 ? 0.25 : 1 }}>‹</button>
                     <span style={{ fontSize: 11, color: "#00000055", fontFamily: "'Source Code Pro', monospace" }}>{idx + 1} / {passes.length}</span>
-                    <button className="btn"
-                      onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.min(prev.passes.length - 1, prev.idx + 1) }))}
-                      disabled={idx === passes.length - 1}
+                    <button className="btn" onClick={() => setPassViewer(prev => ({ ...prev, idx: Math.min(prev.passes.length - 1, prev.idx + 1) }))} disabled={idx === passes.length - 1}
                       style={{ background: "#00000010", border: "1px solid #00000018", borderRadius: 7, padding: "7px 16px", fontSize: 17, color: "#000", opacity: idx === passes.length - 1 ? 0.25 : 1 }}>›</button>
                   </div>
                 )}
                 <div style={{ position: "absolute", top: 16, right: 16 }}>
-                  <button className="btn" onClick={() => setPassViewer(null)}
-                    style={{ background: "#00000015", color: "#000", border: "1px solid #00000020", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>✕</button>
+                  <button className="btn" onClick={() => setPassViewer(null)} style={{ background: "#00000015", color: "#000", border: "1px solid #00000020", borderRadius: 6, padding: "6px 12px", fontSize: 12, fontFamily: "'Source Code Pro', monospace" }}>✕</button>
                 </div>
                 <div style={{ position: "absolute", bottom: 28, left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 11, color: "#00000050", fontFamily: "'Source Code Pro', monospace" }}>
@@ -2052,7 +1730,7 @@ export default function App() {
             );
           })()}
 
-          {/* ── SUMMARY MODAL ── */}
+          {/* ── SUMMARY MODAL — data comes from /api/summary ── */}
           {showSummary && (
             <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
               onClick={e => { if (e.target === e.currentTarget) setShowSummary(false); }}>
@@ -2060,296 +1738,255 @@ export default function App() {
               <div style={{ position: "relative", background: "var(--surface)", borderRadius: "16px 16px 0 0", padding: "24px 20px 40px", width: "100%", maxWidth: 680, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 -8px 40px rgba(0,0,0,0.3)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                   <div style={{ fontSize: 13, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>{summaryMode === "settlement" ? "Settlement" : "Expenses"}</div>
-                  <button className="btn" onClick={() => setShowSummary(false)} style={{ background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 18, padding: "0 4px" }}>✕</button>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <button className="btn" onClick={fetchSummary} disabled={summaryLoading}
+                      style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>
+                      {summaryLoading ? "…" : "↻ rates"}
+                    </button>
+                    <button className="btn" onClick={() => setShowSummary(false)} style={{ background: "transparent", border: "none", color: "var(--text-faint)", fontSize: 18, padding: "0 4px" }}>✕</button>
+                  </div>
                 </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                  {/* ── SETTLEMENT MODE ── */}
-                  {summaryMode === "settlement" && (() => {
-                    const toDKK = (amt, cur) => {
-                      if (!cur || cur === "DKK") return amt;
-                      if (!rates?.rates?.[cur]) return null;
-                      return amt / rates.rates[cur];
-                    };
-                    // Only shared expenses where someone actually paid
-                    const sharedBks = bookings.filter(b =>
-                      EXPENSE_TYPES.includes(b.type) && b.price && b.paid_by &&
-                      (!b.travelers || b.travelers === "both")
-                    ).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-                    // positive = Peter owes Friend (Friend paid); negative = Friend owes Peter (Peter paid)
-                    const getContrib = b => {
-                      const dkk = toDKK(parseFloat(b.price), b.currency || "USD");
-                      if (dkk === null) return null;
-                      return b.paid_by === "friend" ? dkk / 2 : -dkk / 2;
-                    };
-                    let netOutstanding = 0, netSettled = 0, approx = false;
-                    sharedBks.forEach(b => {
-                      const c = getContrib(b);
-                      if (c === null) { approx = true; return; }
-                      if (b.settled) netSettled += c; else netOutstanding += c;
-                    });
-                    const pfx = approx ? "~" : "≈";
-                    const peterOwes = netOutstanding > 0.5;
-                    const friendOwes = netOutstanding < -0.5;
-                    const debtLabel = peterOwes
-                      ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
-                      : friendOwes
-                      ? (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`)
-                      : "All square";
-                    const debtColor = peterOwes
-                      ? (identity === "peter" ? "#f97316" : "#10b981")
-                      : friendOwes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
-                    const rateTs = rates?.time_last_update_utc
-                      ? new Date(rates.time_last_update_utc).toLocaleString("en-DK", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
-                      : null;
-                    return (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                        <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                          <button className="btn" onClick={fetchRates} disabled={ratesLoading}
-                            style={{ background: "transparent", border: "1px solid var(--border)", borderRadius: 4, color: "var(--text-tiny)", fontSize: 10, fontFamily: "'Source Code Pro', monospace", padding: "2px 8px" }}>
-                            {ratesLoading ? "..." : "↻ rates"}
-                          </button>
-                        </div>
+                {summaryLoading && !summaryData ? (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>loading…</div>
+                ) : !summaryData ? (
+                  <div style={{ textAlign: "center", padding: "40px 0", color: "var(--text-error)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>could not load summary</div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
-                        {/* Category cards */}
-                        {sharedBks.length > 0 && TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
-                          const catBks = sharedBks.filter(b => b.type === t.id);
-                          if (catBks.length === 0) return null;
-                          const cardKey = `settle-${t.id}`;
-                          const isExp = !!expandedSumCats[cardKey];
-                          const toggle = () => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
-                          let catOutstanding = 0, catSettled = 0, catApprox = false;
-                          catBks.forEach(b => { const c = getContrib(b); if (c === null) catApprox = true; else if (b.settled) catSettled += c; else catOutstanding += c; });
-                          const catPeterOwes = catOutstanding > 0.5;
-                          const catFriendOwes = catOutstanding < -0.5;
-                          const outColor = catPeterOwes ? (identity === "peter" ? "#f97316" : "#10b981") : catFriendOwes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
-                          const listItems = catBks.filter(b => summaryShowSettled || !b.settled);
-                          return (
-                            <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
-                              <div onClick={toggle} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                                  <span style={{ fontSize: 14 }}>{t.icon}</span>
-                                  <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
-                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{catBks.length}</span>
+                    {/* ── SETTLEMENT MODE ── */}
+                    {summaryMode === "settlement" && (() => {
+                      const { settlement } = summaryData;
+                      const pfx = settlement.approx ? "~" : "≈";
+                      const peterOwes  = settlement.peter_owes;
+                      const friendOwes = settlement.friend_owes;
+                      const debtLabel  = peterOwes
+                        ? (identity === "peter" ? `You owe ${FRIEND_NAME}` : identity === "friend" ? "Peter owes you" : `Peter owes ${FRIEND_NAME}`)
+                        : friendOwes
+                        ? (identity === "peter" ? `${FRIEND_NAME} owes you` : identity === "friend" ? "You owe Peter" : `${FRIEND_NAME} owes Peter`)
+                        : "All square";
+                      const debtColor  = peterOwes
+                        ? (identity === "peter" ? "#f97316" : "#10b981")
+                        : friendOwes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
+
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                          {/* Per-type settlement cards */}
+                          {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => {
+                            const ts = settlement.by_type?.[t.id];
+                            if (!ts) return null;
+                            const cardKey = `settle-${t.id}`;
+                            const isExp = !!expandedSumCats[cardKey];
+                            const outColor = ts.peter_owes
+                              ? (identity === "peter" ? "#f97316" : "#10b981")
+                              : ts.friend_owes ? (identity === "peter" ? "#10b981" : "#f97316") : "#10b981";
+                            const listItems = ts.items.filter(b => summaryShowSettled || !b.settled);
+                            return (
+                              <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+                                <div onClick={() => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }))}
+                                  style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                                    <span style={{ fontSize: 14 }}>{t.icon}</span>
+                                    <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
+                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{ts.items.length}</span>
+                                  </div>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                      {(ts.peter_owes || ts.friend_owes) && (
+                                        <span style={{ fontSize: 13, color: outColor, fontFamily: "'Source Code Pro', monospace" }}>
+                                          {ts.approx ? "~" : "≈"}{Math.round(Math.abs(ts.outstanding_dkk))} DKK
+                                        </span>
+                                      )}
+                                      {!ts.peter_owes && !ts.friend_owes && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>square</span>}
+                                      {Math.abs(ts.settled_dkk) > 0.5 && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>+{Math.round(Math.abs(ts.settled_dkk))} ✓</span>}
+                                    </div>
+                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
+                                  </div>
                                 </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                                  {rates && (catPeterOwes || catFriendOwes) && (
-                                    <span style={{ fontSize: 13, color: outColor, fontFamily: "'Source Code Pro', monospace" }}>
-                                      {catApprox ? "~" : "≈"}{Math.round(Math.abs(catOutstanding))} DKK
-                                    </span>
-                                  )}
-                                  {rates && !catPeterOwes && !catFriendOwes && <span style={{ fontSize: 11, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>square</span>}
-                                  {rates && Math.abs(catSettled) > 0.5 && (
-                                    <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                                      +{Math.round(Math.abs(catSettled))} ✓
-                                    </span>
-                                  )}
-                                </div>
-                                  <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
-                                </div>
-                              </div>
-                              {isExp && (
-                                <div style={{ borderTop: "1px solid var(--border)" }}>
-                                  {listItems.length === 0
-                                    ? <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
-                                    : listItems.map((b, i) => {
-                                        const c = getContrib(b);
-                                        const friendPaid = b.paid_by === "friend";
-                                        const rowColor = friendPaid ? "#f97316" : "#10b981";
-                                        return (
-                                          <div key={b.id} style={{ padding: "8px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.45 : 1, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                                            <div style={{ flex: 1, minWidth: 0 }}>
-                                              <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                                <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
-                                                {b.name}
-                                                {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
+                                {isExp && (
+                                  <div style={{ borderTop: "1px solid var(--border)" }}>
+                                    {listItems.length === 0
+                                      ? <div style={{ padding: "10px 16px", fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>no unsettled items</div>
+                                      : listItems.map((b, i) => {
+                                          const friendPaid = b.paid_by === "friend";
+                                          const rowColor = friendPaid ? "#f97316" : "#10b981";
+                                          const itemDKK = summaryData.rates
+                                            ? (b.currency === "DKK" ? parseFloat(b.price) : parseFloat(b.price) / (summaryData.rates[b.currency] || 1))
+                                            : null;
+                                          return (
+                                            <div key={b.id} style={{ padding: "8px 16px", borderBottom: i < listItems.length - 1 ? "1px solid var(--border)" : "none", opacity: b.settled ? 0.45 : 1, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                                              <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                                  <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
+                                                  {b.name}
+                                                  {b.settled && <span style={{ marginLeft: 5, color: "#10b981", fontSize: 10 }}>✓</span>}
+                                                </div>
+                                                <div style={{ fontSize: 10, color: rowColor, fontFamily: "'Source Code Pro', monospace", marginTop: 2 }}>{friendPaid ? `${FRIEND_NAME} paid` : "Peter paid"}</div>
                                               </div>
-                                              <div style={{ fontSize: 10, color: rowColor, fontFamily: "'Source Code Pro', monospace", marginTop: 2 }}>{friendPaid ? `${FRIEND_NAME} paid` : "Peter paid"}</div>
+                                              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                                <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</div>
+                                                {itemDKK !== null && <div style={{ fontSize: 11, color: rowColor, fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(Math.abs(itemDKK / 2))} DKK</div>}
+                                              </div>
                                             </div>
-                                            <div style={{ textAlign: "right", flexShrink: 0 }}>
-                                              <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</div>
-                                              {c !== null && <div style={{ fontSize: 11, color: rowColor, fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(c))} DKK</div>}
-                                            </div>
-                                          </div>
-                                        );
-                                      })
-                                  }
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                        {/* settled toggle */}
-                        {sharedBks.length > 0 && (
+                                          );
+                                        })
+                                    }
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+
                           <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", userSelect: "none", paddingLeft: 2 }}>
                             <input type="checkbox" checked={summaryShowSettled} onChange={e => setSummaryShowSettled(e.target.checked)} style={{ accentColor: "#0ea5e9", width: 13, height: 13 }} />
                             <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em" }}>show settled</span>
                           </label>
-                        )}
 
-                        {/* Breakdown + net */}
-                        {rates && sharedBks.length > 0 && (
-                          <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border2)", padding: 20 }}>
-                            {Math.abs(netSettled) > 0.5 && (
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>settled</span>
-                                <span style={{ fontSize: 14, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(netSettled))} DKK ✓</span>
+                          {/* Net outstanding */}
+                          {summaryData.rates && (
+                            <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border2)", padding: 20 }}>
+                              {Math.abs(settlement.net_settled_dkk) > 0.5 && (
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>settled</span>
+                                  <span style={{ fontSize: 14, color: "#10b981", fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(settlement.net_settled_dkk))} DKK ✓</span>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 20 }}>
+                                <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>outstanding</span>
+                                <span style={{ fontSize: 14, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(settlement.net_outstanding_dkk))} DKK</span>
                               </div>
-                            )}
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 20 }}>
-                              <span style={{ fontSize: 12, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>outstanding</span>
-                              <span style={{ fontSize: 14, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{pfx}{Math.round(Math.abs(netOutstanding))} DKK</span>
-                            </div>
-                            <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-                              <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>net outstanding</div>
-                              {!peterOwes && !friendOwes
-                                ? <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 16 }}>All square ✓</div>
-                                : <>
-                                    <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", marginBottom: 8 }}>{debtLabel}</div>
-                                    <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 38, color: debtColor, lineHeight: 1 }}>
-                                      {pfx}{Math.round(Math.abs(netOutstanding))} <span style={{ fontSize: 17, color: "var(--text-faint)" }}>DKK</span>
-                                    </div>
-                                  </>
-                              }
-                            </div>
-                          </div>
-                        )}
-
-                        {sharedBks.length === 0 && (
-                          <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No shared paid expenses yet.</div>
-                        )}
-                        {rateTs && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 2 }}>rates · {rateTs} UTC</div>}
-                      </div>
-                    );
-                  })()}
-
-                  {/* ── EXPENSE MODE ── */}
-                  {summaryMode === "expenses" && (() => {
-                    const catToDKK = (amt, cur) => {
-                      if (!cur || cur === "DKK") return amt;
-                      if (!rates?.rates?.[cur]) return null;
-                      return amt / rates.rates[cur];
-                    };
-                    const sumDKK = bks => {
-                      let total = 0, approx = false;
-                      bks.forEach(b => {
-                        const d = catToDKK(parseFloat(b.price), b.currency || "USD");
-                        if (d === null) { approx = true; return; }
-                        total += d;
-                      });
-                      return { total, approx };
-                    };
-                    const renderCatCard = (t, items, groupKey) => {
-                      if (items.length === 0) return null;
-                      const cardKey = `${groupKey}-${t.id}`;
-                      const isExp = !!expandedSumCats[cardKey];
-                      const toggle = () => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }));
-                      const { total: totalDKK, approx } = sumDKK(items);
-                      const sorted = [...items].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-                      return (
-                        <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
-                          <div onClick={toggle} style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
-                              <span style={{ fontSize: 14 }}>{t.icon}</span>
-                              <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
-                              <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{items.length}</span>
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              {ratesLoading ? <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>…</span>
-                              : rates ? <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{approx ? "~" : "≈"}{Math.round(totalDKK)} DKK</span>
-                              : null}
-                              <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
-                            </div>
-                          </div>
-                          {isExp && (
-                            <div style={{ borderTop: "1px solid var(--border)" }}>
-                              {sorted.map((b, i) => {
-                                const dkk = b.currency !== "DKK" ? catToDKK(parseFloat(b.price), b.currency) : null;
-                                return (
-                                  <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: i < sorted.length - 1 ? "1px solid var(--border)" : "none" }}>
-                                    <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
-                                      <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
-                                      {b.name}
-                                    </div>
-                                    <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0, marginLeft: 12 }}>
-                                      <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</span>
-                                      {dkk !== null && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(dkk)}</span>}
-                                    </div>
-                                  </div>
-                                );
-                              })}
+                              <div style={{ borderTop: "1px solid var(--border)", paddingTop: 16 }}>
+                                <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>net outstanding</div>
+                                {!peterOwes && !friendOwes
+                                  ? <div style={{ color: "#10b981", fontFamily: "'Source Code Pro', monospace", fontSize: 16 }}>All square ✓</div>
+                                  : <>
+                                      <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", marginBottom: 8 }}>{debtLabel}</div>
+                                      <div style={{ fontFamily: "'Playfair Display', serif", fontSize: 38, color: debtColor, lineHeight: 1 }}>
+                                        {pfx}{Math.round(Math.abs(settlement.net_outstanding_dkk))} <span style={{ fontSize: 17, color: "var(--text-faint)" }}>DKK</span>
+                                      </div>
+                                    </>
+                                }
+                              </div>
                             </div>
                           )}
+                          {summaryData.rates_at && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 2 }}>rates · {summaryData.rates_at}</div>}
                         </div>
                       );
-                    };
-                    const sectionLabel = txt => (
-                      <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.12em", paddingLeft: 2 }}>{txt}</div>
-                    );
-                    const subtotalBar = (label, total, approx, sub) => rates ? (
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--border)" }}>
-                        <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
-                        <div style={{ textAlign: "right" }}>
-                          <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{approx ? "~" : "≈"}{Math.round(total)} DKK</div>
-                          {sub && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
-                        </div>
-                      </div>
-                    ) : null;
+                    })()}
 
-                    const EXPENSE_BKS = bookings.filter(b => EXPENSE_TYPES.includes(b.type) && b.price);
-                    const collectiveBks = EXPENSE_BKS.filter(b => !b.travelers || b.travelers === "both");
-                    const peterBks     = EXPENSE_BKS.filter(b => b.travelers === "peter");
-                    const friendBks    = EXPENSE_BKS.filter(b => b.travelers === "friend");
-                    const colSum = sumDKK(collectiveBks);
-                    const petSum = sumDKK(peterBks);
-                    const friSum = sumDKK(friendBks);
+                    {/* ── EXPENSE MODE ── */}
+                    {summaryMode === "expenses" && (() => {
+                      const { collective, peter: petSection, friend: friSection, per_person } = summaryData;
 
-                    return (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-                        {collectiveBks.length > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            {sectionLabel("collective")}
-                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, collectiveBks.filter(b => b.type === t.id), "col"))}
-                            {subtotalBar("shared total", colSum.total, colSum.approx, `→ ≈${Math.round(colSum.total / 2)} each`)}
-                          </div>
-                        )}
-                        {peterBks.length > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            {sectionLabel("peter · personal")}
-                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, peterBks.filter(b => b.type === t.id), "pet"))}
-                            {subtotalBar("peter total", petSum.total, petSum.approx, null)}
-                          </div>
-                        )}
-                        {friendBks.length > 0 && (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                            {sectionLabel(`${FRIEND_NAME} · personal`)}
-                            {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, friendBks.filter(b => b.type === t.id), "fri"))}
-                            {subtotalBar(`${FRIEND_NAME} total`, friSum.total, friSum.approx, null)}
-                          </div>
-                        )}
-                        {rates && EXPENSE_BKS.length > 0 && (
-                          <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border2)", padding: 20 }}>
-                            <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>per person</div>
-                            {[["Peter", colSum.total / 2 + petSum.total, colSum.approx || petSum.approx], [FRIEND_NAME, colSum.total / 2 + friSum.total, colSum.approx || friSum.approx]].map(([name, total, apx]) => (
-                              <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-                                <span style={{ fontSize: 13, color: "var(--text)" }}>{name}</span>
-                                <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "var(--text)" }}>{apx ? "~" : "≈"}{Math.round(total)} <span style={{ fontSize: 12, color: "var(--text-faint)" }}>DKK</span></span>
+                      function renderCatCard(t, te, groupKey) {
+                        if (!te || te.items.length === 0) return null;
+                        const cardKey = `${groupKey}-${t.id}`;
+                        const isExp = !!expandedSumCats[cardKey];
+                        const sorted = [...te.items].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+                        return (
+                          <div key={cardKey} style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border)", overflow: "hidden" }}>
+                            <div onClick={() => setExpandedSumCats(prev => ({ ...prev, [cardKey]: !prev[cardKey] }))}
+                              style={{ padding: "12px 16px", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 7, flexShrink: 0 }}>
+                                <span style={{ fontSize: 14 }}>{t.icon}</span>
+                                <span style={{ fontSize: 12, color: t.color, fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>{t.label}</span>
+                                <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{te.items.length}</span>
                               </div>
-                            ))}
-                            <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 10, fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
-                              personal + ½ collective
+                              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                {summaryLoading ? <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>…</span>
+                                  : summaryData.rates ? <span style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{te.approx ? "~" : "≈"}{Math.round(te.total_dkk)} DKK</span>
+                                  : null}
+                                <span style={{ fontSize: 10, color: "var(--text-tiny)", flexShrink: 0 }}>{isExp ? "▲" : "▼"}</span>
+                              </div>
                             </div>
+                            {isExp && (
+                              <div style={{ borderTop: "1px solid var(--border)" }}>
+                                {sorted.map((b, i) => {
+                                  const dkk = summaryData.rates && b.currency !== "DKK"
+                                    ? parseFloat(b.price) / (summaryData.rates[b.currency] || 1) : null;
+                                  return (
+                                    <div key={b.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 16px", borderBottom: i < sorted.length - 1 ? "1px solid var(--border)" : "none" }}>
+                                      <div style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0 }}>
+                                        <span style={{ color: "var(--text-tiny)", marginRight: 5 }}>{b.date ? b.date.slice(5).replace("-", "/") : "—"}</span>
+                                        {b.name}
+                                      </div>
+                                      <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexShrink: 0, marginLeft: 12 }}>
+                                        <span style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace" }}>{parseFloat(b.price).toFixed(2)} {b.currency}</span>
+                                        {dkk !== null && <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>≈{Math.round(dkk)}</span>}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
-                        )}
-                        {EXPENSE_BKS.length === 0 && (
-                          <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>
-                        )}
-                      </div>
-                    );
-                  })()}
+                        );
+                      }
 
-                </div>
+                      const sectionLabel = txt => (
+                        <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.12em", paddingLeft: 2 }}>{txt}</div>
+                      );
+
+                      const subtotalBar = (label, amount, approx, sub) => summaryData.rates ? (
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 8, border: "1px solid var(--border)" }}>
+                          <span style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: 13, color: "var(--text-muted)", fontFamily: "'Source Code Pro', monospace" }}>{approx ? "~" : "≈"}{Math.round(amount)} DKK</div>
+                            {sub && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
+                          </div>
+                        </div>
+                      ) : null;
+
+                      const hasCollective = collective.total_dkk > 0 || Object.keys(collective.by_type || {}).length > 0;
+                      const hasPeter      = petSection.total_dkk > 0 || Object.keys(petSection.by_type || {}).length > 0;
+                      const hasFriend     = friSection.total_dkk > 0 || Object.keys(friSection.by_type || {}).length > 0;
+
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+                          {hasCollective && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {sectionLabel("collective")}
+                              {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, collective.by_type?.[t.id], "col"))}
+                              {subtotalBar("shared total", collective.total_dkk, collective.approx, `→ ≈${Math.round(collective.total_dkk / 2)} each`)}
+                            </div>
+                          )}
+                          {hasPeter && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {sectionLabel("peter · personal")}
+                              {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, petSection.by_type?.[t.id], "pet"))}
+                              {subtotalBar("peter total", petSection.total_dkk, petSection.approx, null)}
+                            </div>
+                          )}
+                          {hasFriend && (
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {sectionLabel(`${FRIEND_NAME} · personal`)}
+                              {TYPES.filter(t => EXPENSE_TYPES.includes(t.id)).map(t => renderCatCard(t, friSection.by_type?.[t.id], "fri"))}
+                              {subtotalBar(`${FRIEND_NAME} total`, friSection.total_dkk, friSection.approx, null)}
+                            </div>
+                          )}
+                          {summaryData.rates && (hasCollective || hasPeter || hasFriend) && (
+                            <div style={{ background: "var(--surface2)", borderRadius: 10, border: "1px solid var(--border2)", padding: 20 }}>
+                              <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 16 }}>per person</div>
+                              {[["Peter", per_person.peter], [FRIEND_NAME, per_person.friend]].map(([name, pp]) => (
+                                <div key={name} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                                  <span style={{ fontSize: 13, color: "var(--text)" }}>{name}</span>
+                                  <span style={{ fontFamily: "'Playfair Display', serif", fontSize: 20, color: "var(--text)" }}>{pp.approx ? "~" : "≈"}{Math.round(pp.total_dkk)} <span style={{ fontSize: 12, color: "var(--text-faint)" }}>DKK</span></span>
+                                </div>
+                              ))}
+                              <div style={{ borderTop: "1px solid var(--border)", marginTop: 4, paddingTop: 10, fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>
+                                personal + ½ collective
+                              </div>
+                            </div>
+                          )}
+                          {!hasCollective && !hasPeter && !hasFriend && (
+                            <div style={{ color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", fontSize: 12 }}>No expenses yet.</div>
+                          )}
+                          {summaryData.rates_at && <div style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", paddingLeft: 2 }}>rates · {summaryData.rates_at}</div>}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2367,14 +2004,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Hidden file input for pass uploads */}
-      <input
-        type="file"
-        accept="image/*"
-        ref={passFileRef}
-        onChange={handlePassFile}
-        style={{ display: "none" }}
-      />
+      <input type="file" accept="image/*" ref={passFileRef} onChange={handlePassFile} style={{ display: "none" }} />
     </>
   );
 }
@@ -2395,7 +2025,6 @@ function CopyButton({ text, onCopy, title = "Copy address", style }) {
   );
 }
 
-// Highlighted "extras" pills (seat/car/gate/room etc) + a button opening the full details modal
 function DetailPills({ booking, onOpenModal }) {
   const details = booking.details;
   const hasDetails = details && typeof details === "object" && Object.values(details).some(Boolean);
@@ -2422,16 +2051,6 @@ function Meta({ label, value, highlight, mono }) {
       <span style={{ fontSize: 10, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</span>
       <span style={{ fontSize: 12.5, color: highlight ? "#10b981" : "var(--text-muted)", fontFamily: mono ? "'Source Code Pro', monospace" : "'Georgia', serif" }}>{value}</span>
     </span>
-  );
-}
-
-function SummaryCard({ label, value, color, sub }) {
-  return (
-    <div style={{ background: "var(--surface2)", borderRadius: 8, padding: "16px 20px", border: "1px solid var(--border)" }}>
-      <div style={{ fontSize: 11, color: "var(--text-faint)", fontFamily: "'Source Code Pro', monospace", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 24, fontFamily: "'Playfair Display', serif", color, marginBottom: 4 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: "var(--text-tiny)", fontFamily: "'Source Code Pro', monospace" }}>{sub}</div>}
-    </div>
   );
 }
 
