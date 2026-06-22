@@ -20,7 +20,7 @@ class TransitCard extends StatelessWidget {
     final color = AppColors.typeColor(b.type);
     final icon = typeIcon(b.type);
     final isExpanded = prov.isCardExpanded(b.id);
-    final isPast = (b.date ?? '') < (prov.trip?.today ?? '');
+    final isPast = (b.date ?? '').compareTo(prov.trip?.today ?? '') < 0;
     final allPasses = b.allPasses;
     final myPasses = b.passesFor(prov.identity);
     final showPassBtn = kPassTypes.contains(b.type) &&
@@ -318,9 +318,9 @@ class _ActionButton extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
         decoration: BoxDecoration(
-          border: Border.all(color: active ? AppColors.accent.withValues(alpha: 0.5) : AppColors.border),
+          border: Border.all(color: active ? AppColors.accent.withOpacity(0.5) : AppColors.border),
           borderRadius: BorderRadius.circular(4),
-          color: active ? AppColors.accent.withValues(alpha: 0.1) : Colors.transparent,
+          color: active ? AppColors.accent.withOpacity(0.1) : Colors.transparent,
         ),
         child: Text(
           label,

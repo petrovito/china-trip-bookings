@@ -46,7 +46,7 @@ class _SegmentCardState extends State<SegmentCard> {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: seg.isActive
-                ? AppColors.accent.withValues(alpha: 0.35)
+                ? AppColors.accent.withOpacity(0.35)
                 : AppColors.border2,
             width: 2,
           ),
@@ -85,8 +85,8 @@ class _SegmentCardState extends State<SegmentCard> {
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: AppColors.accent.withValues(alpha: 0.12),
-                                    border: Border.all(color: AppColors.accent.withValues(alpha: 0.22)),
+                                    color: AppColors.accent.withOpacity(0.12),
+                                    border: Border.all(color: AppColors.accent.withOpacity(0.22)),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: Text('stop', style: AppTextStyles.label(size: 9, color: AppColors.accent)),
@@ -100,7 +100,7 @@ class _SegmentCardState extends State<SegmentCard> {
                                         decoration: BoxDecoration(
                                           shape: BoxShape.circle,
                                           color: AppColors.accent,
-                                          boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.6), blurRadius: 6)],
+                                          boxShadow: [BoxShadow(color: AppColors.accent.withOpacity(0.6), blurRadius: 6)],
                                         ),
                                       ),
                                       const SizedBox(width: 8),
@@ -128,11 +128,11 @@ class _SegmentCardState extends State<SegmentCard> {
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                   decoration: BoxDecoration(
                                     color: isExpenseOpen
-                                        ? AppColors.accent.withValues(alpha: 0.15)
-                                        : Colors.white.withValues(alpha: 0.06),
+                                        ? AppColors.accent.withOpacity(0.15)
+                                        : Colors.white.withOpacity(0.06),
                                     border: Border.all(
                                       color: isExpenseOpen
-                                          ? AppColors.accent.withValues(alpha: 0.3)
+                                          ? AppColors.accent.withOpacity(0.3)
                                           : AppColors.border,
                                     ),
                                     borderRadius: BorderRadius.circular(5),
@@ -203,7 +203,7 @@ class _SegmentExpensePanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.04),
+        color: AppColors.accent.withOpacity(0.04),
         border: const Border(top: BorderSide(color: AppColors.border)),
       ),
       child: Column(
@@ -282,10 +282,10 @@ class _DayRow extends StatelessWidget {
       decoration: BoxDecoration(
         border: Border(
           top: BorderSide(
-            color: day.isToday ? AppColors.accent.withValues(alpha: 0.3) : AppColors.border,
+            color: day.isToday ? AppColors.accent.withOpacity(0.3) : AppColors.border,
           ),
         ),
-        color: day.isToday ? AppColors.accent.withValues(alpha: 0.04) : Colors.transparent,
+        color: day.isToday ? AppColors.accent.withOpacity(0.04) : Colors.transparent,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,9 +426,9 @@ class _HotelRow extends StatelessWidget {
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.purple.withValues(alpha: 0.08),
+        color: AppColors.purple.withOpacity(0.08),
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: AppColors.purple.withValues(alpha: 0.2)),
+        border: Border.all(color: AppColors.purple.withOpacity(0.2)),
       ),
       child: Row(
         children: [

@@ -17,7 +17,7 @@ class BookingCard extends StatelessWidget {
     final b = booking;
     final color = AppColors.typeColor(b.type);
     final isExpanded = prov.isCardExpanded(b.id);
-    final isPast = (b.date ?? '') < (prov.trip?.today ?? '');
+    final isPast = (b.date ?? '').compareTo(prov.trip?.today ?? '') < 0;
     final dimmed = !b.isPaid;
 
     return Opacity(
@@ -29,7 +29,7 @@ class BookingCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(7),
           border: Border(left: BorderSide(color: color, width: 3)),
           boxShadow: b.settled
-              ? [BoxShadow(color: AppColors.green.withValues(alpha: 0.08), blurRadius: 8)]
+              ? [BoxShadow(color: AppColors.green.withOpacity(0.08), blurRadius: 8)]
               : null,
         ),
         child: GestureDetector(
@@ -270,9 +270,9 @@ class _SmBtn extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        border: Border.all(color: accent ? AppColors.accent.withValues(alpha: 0.5) : AppColors.border),
+        border: Border.all(color: accent ? AppColors.accent.withOpacity(0.5) : AppColors.border),
         borderRadius: BorderRadius.circular(4),
-        color: accent ? AppColors.accent.withValues(alpha: 0.1) : Colors.transparent,
+        color: accent ? AppColors.accent.withOpacity(0.1) : Colors.transparent,
       ),
       child: Text(label, style: AppTextStyles.mono11(color: accent ? AppColors.accent : AppColors.textFaint)),
     ),

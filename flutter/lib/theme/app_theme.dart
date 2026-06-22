@@ -127,7 +127,7 @@ ThemeData buildTheme() {
           s.contains(WidgetState.selected) ? AppColors.accent : AppColors.textFaint),
       trackColor: WidgetStateProperty.resolveWith((s) =>
           s.contains(WidgetState.selected)
-              ? AppColors.accent.withValues(alpha: 0.3)
+              ? AppColors.accent.withOpacity(0.3)
               : AppColors.border),
     ),
     checkboxTheme: CheckboxThemeData(

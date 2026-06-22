@@ -184,9 +184,9 @@ class _Chip extends StatelessWidget {
       margin: const EdgeInsets.only(right: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: selected ? AppColors.accent.withValues(alpha: 0.12) : Colors.transparent,
+        color: selected ? AppColors.accent.withOpacity(0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: selected ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border),
+        border: Border.all(color: selected ? AppColors.accent.withOpacity(0.4) : AppColors.border),
       ),
       child: Text(label, style: AppTextStyles.mono11(color: selected ? AppColors.accent : AppColors.textFaint)),
     ),
@@ -256,10 +256,10 @@ class _AddForm extends StatelessWidget {
                   margin: const EdgeInsets.only(right: 6),
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
-                    color: cat == c['id'] ? AppColors.accent.withValues(alpha: 0.12) : Colors.transparent,
+                    color: cat == c['id'] ? AppColors.accent.withOpacity(0.12) : Colors.transparent,
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: cat == c['id'] ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border,
+                      color: cat == c['id'] ? AppColors.accent.withOpacity(0.4) : AppColors.border,
                     ),
                   ),
                   child: Text('${c['icon']} ${c['label']!.toLowerCase()}',
@@ -278,10 +278,10 @@ class _AddForm extends StatelessWidget {
                     margin: const EdgeInsets.only(right: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: assignee == a ? AppColors.accent.withValues(alpha: 0.12) : Colors.transparent,
+                      color: assignee == a ? AppColors.accent.withOpacity(0.12) : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
-                        color: assignee == a ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border,
+                        color: assignee == a ? AppColors.accent.withOpacity(0.4) : AppColors.border,
                       ),
                     ),
                     child: Text(
@@ -329,7 +329,7 @@ class _CatGroup extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.15),
+                    color: AppColors.accent.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('$pending', style: AppTextStyles.label(size: 9, color: AppColors.accent)),

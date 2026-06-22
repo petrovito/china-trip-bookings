@@ -30,6 +30,17 @@ class Todo {
     bookingId: j['booking_id']?.toString(),
   );
 
+  Map<String, dynamic> toJson() => {
+    'id':        id,
+    'title':     title,
+    'category':  category,
+    'assignee':  assignee,
+    'done':      done,
+    if (deadline  != null) 'deadline':   deadline,
+    if (segmentId != null) 'segment_id': segmentId,
+    if (bookingId != null) 'booking_id': bookingId,
+  };
+
   Todo copyWith({bool? done}) => Todo(
     id:        id,
     title:     title,

@@ -71,7 +71,7 @@ class _TripTabState extends State<TripTab> {
                 decoration: BoxDecoration(
                   color: AppColors.accent,
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: AppColors.accent.withValues(alpha: 0.45), blurRadius: 12)],
+                  boxShadow: [BoxShadow(color: AppColors.accent.withOpacity(0.45), blurRadius: 12)],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

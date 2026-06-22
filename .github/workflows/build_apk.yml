@@ -2,7 +2,7 @@ name: Build Flutter APK
 
 on:
   push:
-    branches: [flutter-frontend]
+    branches: [main]
     paths:
       - 'flutter/**'
   workflow_dispatch:
@@ -31,7 +31,6 @@ jobs:
           channel: stable
           cache: true
 
-      # ── Bootstrap (first run only) ────────────────────────────────────────
       - name: Check if platform files exist
         id: check
         run: |
@@ -68,7 +67,6 @@ jobs:
           git commit -m "chore: add flutter platform files [skip ci]"
           git push
 
-      # ── Build ─────────────────────────────────────────────────────────────
       - name: Flutter pub get
         working-directory: flutter
         run: flutter pub get

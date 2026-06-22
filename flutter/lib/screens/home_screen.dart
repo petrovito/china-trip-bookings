@@ -145,10 +145,10 @@ class _Toast extends StatelessWidget {
         decoration: BoxDecoration(
           color: msg.ok ? const Color(0xFF1a3a2a) : const Color(0xFF3a1a1a),
           border: Border.all(
-            color: msg.ok ? AppColors.green.withValues(alpha: 0.5) : AppColors.red.withValues(alpha: 0.5),
+            color: msg.ok ? AppColors.green.withOpacity(0.5) : AppColors.red.withOpacity(0.5),
           ),
           borderRadius: BorderRadius.circular(8),
-          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.4), blurRadius: 12)],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 12)],
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,

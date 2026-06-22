@@ -53,7 +53,7 @@ class _PickBtn extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppColors.surface2,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+          border: Border.all(color: AppColors.accent.withOpacity(0.3)),
         ),
         alignment: Alignment.center,
         child: Text(label, style: AppTextStyles.mono13(color: AppColors.accent)),

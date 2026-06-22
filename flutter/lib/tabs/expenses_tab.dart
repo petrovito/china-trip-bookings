@@ -89,10 +89,10 @@ class _FilterBar extends StatelessWidget {
                     margin: const EdgeInsets.only(right: 6),
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: selected ? AppColors.typeColor(t['id']!).withValues(alpha: 0.15) : AppColors.surface2,
+                      color: selected ? AppColors.typeColor(t['id']!).withOpacity(0.15) : AppColors.surface2,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: selected ? AppColors.typeColor(t['id']!).withValues(alpha: 0.5) : AppColors.border,
+                        color: selected ? AppColors.typeColor(t['id']!).withOpacity(0.5) : AppColors.border,
                       ),
                     ),
                     child: Text(
@@ -171,10 +171,10 @@ class _FilterChip extends StatelessWidget {
       margin: const EdgeInsets.only(right: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: selected ? AppColors.accent.withValues(alpha: 0.12) : Colors.transparent,
+        color: selected ? AppColors.accent.withOpacity(0.12) : Colors.transparent,
         borderRadius: BorderRadius.circular(4),
         border: Border.all(
-          color: selected ? AppColors.accent.withValues(alpha: 0.4) : AppColors.border,
+          color: selected ? AppColors.accent.withOpacity(0.4) : AppColors.border,
         ),
       ),
       child: Text(label, style: AppTextStyles.mono11(color: selected ? AppColors.accent : AppColors.textFaint)),
@@ -255,9 +255,9 @@ class _SummaryPanel extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.06),
+                color: AppColors.accent.withOpacity(0.06),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+                border: Border.all(color: AppColors.accent.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
