@@ -1,0 +1,61 @@
+name: Bootstrap Flutter Platform Files
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout flutter-frontend
+        uses: actions/checkout@v4
+        with:
+          ref: flutter-frontend
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: temurin
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.x'
+          channel: stable
+
+      - name: Generate platform files into temp dir
+        run: |
+          flutter create /tmp/bootstrap \
+            --project-name china_trip \
+            --org com.petrovito \
+            --platforms android,web \
+            --description "China Trip Bookings"
+
+      - name: Copy android/ and web/ into repo
+        run: |
+          cp -r /tmp/bootstrap/android flutter/android
+          cp -r /tmp/bootstrap/web     flutter/web
+
+      - name: Patch AndroidManifest.xml
+        run: |
+          M="flutter/android/app/src/main/AndroidManifest.xml"
+
+          # Internet + Camera permissions
+          sed -i 's|<application|<uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <application|' "$M"
+
+          # queries block for url_launcher (Amap intent, http/https)
+          sed -i 's|</manifest>|    <queries>\n        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="https"/></intent>\n        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="http"/></intent>\n        <intent><action android:name="android.intent.action.VIEW"/><data android:scheme="androidamap"/></intent>\n    </queries>\n</manifest>|' "$M"
+
+      - name: Commit platform files
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add flutter/android flutter/web
+          git diff --staged --quiet && echo "Nothing to commit" || \
+            git commit -m "chore: add flutter platform files (android + web)"
+          git push
