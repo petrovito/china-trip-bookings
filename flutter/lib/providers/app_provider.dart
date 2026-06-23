@@ -78,7 +78,14 @@ class AppProvider extends ChangeNotifier {
 
   bool get summaryLoading => _summaryState == LoadState.loading;
 
+  // Exposed so trip_tab can distinguish "loading first time" vs "offline, no cache"
+  LoadState get tripState => _tripState;
+
   bool get isOffline => _bookingsState == LoadState.error;
+
+  // ── Init done — HomeScreen watches this to show identity picker ───────────
+  bool _initDone = false;
+  bool get initDone => _initDone;
 
   // ── Auth ──────────────────────────────────────────────────────────────────
   String _writeToken = '';
@@ -224,8 +231,14 @@ class AppProvider extends ChangeNotifier {
     if (who != null) _identity = who;
     notifyListeners();
 
-    // Load from cache immediately, then refresh from network
+    // Load from cache immediately (shows trip, bookings, todos right away)
     await _loadFromCache();
+
+    // Signal init complete — HomeScreen uses this to auto-show identity picker
+    // if no identity was found in cache (i.e. first launch).
+    _initDone = true;
+    notifyListeners();
+
     await refreshAll();
   }
 
@@ -281,7 +294,10 @@ class AppProvider extends ChangeNotifier {
       final data = await _api.fetchTrip();
       _trip = data;
       _tripState = LoadState.loaded;
-      // Don't cache trip — it's computed server-side and stale quickly
+      // Cache trip so next launch shows it immediately (stale-while-revalidate).
+      // The isToday/isActive flags may be stale by a day at most before the
+      // live fetch corrects them — acceptable trade-off for instant offline display.
+      await _cache.write('trip', data.toJson());
     } catch (_) {
       _tripState = LoadState.error;
     }

@@ -15,8 +15,11 @@ class TripTab extends StatefulWidget {
 
 class _TripTabState extends State<TripTab> {
   final ScrollController _scroll = ScrollController();
-  final Map<String, GlobalKey> _dayKeys = {};
-  GlobalKey? _todayKey;
+
+  // The key object (stable booking/segment ID string) for the "today" widget.
+  // We use GlobalObjectKey(keyObj) so the same logical key is produced on every
+  // rebuild — creating a new GlobalKey() each build loses the context reference.
+  String? _todayKeyObj;
 
   @override
   void dispose() {
@@ -25,9 +28,11 @@ class _TripTabState extends State<TripTab> {
   }
 
   void _scrollToToday() {
-    if (_todayKey?.currentContext != null) {
+    if (_todayKeyObj == null) return;
+    final ctx = GlobalObjectKey(_todayKeyObj!).currentContext;
+    if (ctx != null) {
       Scrollable.ensureVisible(
-        _todayKey!.currentContext!,
+        ctx,
         duration: const Duration(milliseconds: 400),
         curve: Curves.easeInOut,
         alignment: 0.1,
@@ -43,14 +48,36 @@ class _TripTabState extends State<TripTab> {
     return Stack(
       children: [
         trip == null
-            ? const Center(
-                child: Text('LOADING…',
-                    style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppColors.border, letterSpacing: 0.1)),
+            ? Center(
+                child: prov.tripState == LoadState.error
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.wifi_off, size: 24, color: AppColors.border),
+                          const SizedBox(height: 8),
+                          const Text('OFFLINE — NO CACHED DATA',
+                              style: TextStyle(
+                                  fontFamily: 'monospace',
+                                  fontSize: 11,
+                                  color: AppColors.textTiny,
+                                  letterSpacing: 0.1)),
+                        ],
+                      )
+                    : const Text('LOADING…',
+                        style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: AppColors.border,
+                            letterSpacing: 0.1)),
               )
             : trip.timeline.isEmpty
                 ? const Center(
                     child: Text('NO BOOKINGS YET',
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppColors.border, letterSpacing: 0.1)),
+                        style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: AppColors.border,
+                            letterSpacing: 0.1)),
                   )
                 : RefreshIndicator(
                     color: AppColors.accent,
@@ -82,8 +109,12 @@ class _TripTabState extends State<TripTab> {
                     ),
                     const SizedBox(width: 6),
                     const Text('today',
-                        style: TextStyle(fontFamily: 'monospace', fontSize: 11, fontWeight: FontWeight.w600,
-                            color: Colors.white, letterSpacing: 0.08)),
+                        style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            letterSpacing: 0.08)),
                   ],
                 ),
               ),
@@ -96,30 +127,29 @@ class _TripTabState extends State<TripTab> {
   Widget _buildTimeline(AppProvider prov, List<TripItem> timeline) {
     final today = prov.trip?.today ?? '';
     final widgets = <Widget>[];
+    _todayKeyObj = null; // reset on each rebuild
 
     for (final item in timeline) {
       if (item.kind == 'transit') {
         final b = item.booking!;
         final isToday = b.date == today;
-        final key = GlobalKey();
-        if (isToday) _todayKey = key;
-        widgets.add(KeyedSubtree(key: key, child: TransitCard(booking: b)));
+        final keyObj = 'transit_${b.id}';
+        if (isToday && _todayKeyObj == null) _todayKeyObj = keyObj;
+        widgets.add(KeyedSubtree(
+          key: GlobalObjectKey(keyObj),
+          child: TransitCard(booking: b),
+        ));
       } else {
         final seg = item.segment!;
-        for (final day in seg.days) {
-          if (day.isToday) {
-            final key = GlobalKey();
-            _todayKey = key;
-            _dayKeys[day.date] = key;
-          }
-        }
-        if (seg.isActive && _todayKey == null) {
-          final key = GlobalKey();
-          _todayKey = key;
-          widgets.add(KeyedSubtree(key: key, child: SegmentCard(segment: seg)));
-          continue;
-        }
-        widgets.add(SegmentCard(segment: seg));
+        // Target this segment if any day is today, or it's the active segment
+        final hasToday = seg.days.any((d) => d.isToday) ||
+            (seg.isActive && today.isNotEmpty);
+        final keyObj = 'seg_${seg.id}';
+        if (hasToday && _todayKeyObj == null) _todayKeyObj = keyObj;
+        widgets.add(KeyedSubtree(
+          key: GlobalObjectKey(keyObj),
+          child: SegmentCard(segment: seg),
+        ));
       }
     }
 

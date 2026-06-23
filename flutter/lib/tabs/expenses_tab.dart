@@ -14,12 +14,11 @@ class ExpensesTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final prov = context.watch<AppProvider>();
     final bookings = prov.filteredBookings;
-    final total = bookings.fold<double>(0, (sum, b) => sum + (b.price ?? 0));
 
     return Column(
       children: [
         _FilterBar(),
-        // Stats row
+        // Stats + clear row
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           color: AppColors.bg,
@@ -37,14 +36,19 @@ class ExpensesTab extends StatelessWidget {
             ],
           ),
         ),
-        // Summary panel toggle
-        _SummaryToggle(),
-        // List
+        // ── Expenses summary (per-person + breakdown) ──
+        _ExpensesToggle(),
+        // ── Settlement (who owes what) — separate ──
+        _SettlementToggle(),
+        // ── Booking list ──
         Expanded(
           child: bookings.isEmpty
               ? const Center(
                   child: Text('no bookings',
-                      style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: AppColors.textTiny)),
+                      style: TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          color: AppColors.textTiny)),
                 )
               : RefreshIndicator(
                   color: AppColors.accent,
@@ -68,15 +72,17 @@ class _FilterBar extends StatelessWidget {
 
     return Container(
       color: AppColors.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Type chips
+          // Type chips — horizontal scroll
           SizedBox(
             height: 28,
             child: ListView(
               scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
               children: kTypes.map((t) {
                 final selected = f.types.contains(t['id']);
                 return GestureDetector(
@@ -106,11 +112,14 @@ class _FilterBar extends StatelessWidget {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 6),
-          // Status filters
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+          const SizedBox(height: 5),
+          // Status / traveler / paid-by chips — also use SizedBox+ListView to
+          // prevent overflow on small screens
+          SizedBox(
+            height: 24,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: EdgeInsets.zero,
               children: [
                 _FilterChip(
                   label: 'all',
@@ -127,7 +136,7 @@ class _FilterBar extends StatelessWidget {
                   selected: f.settled == 'settled',
                   onTap: () => prov.updateFilters(f.copyWith(settled: 'settled')),
                 ),
-                const SizedBox(width: 12),
+                const _VSep(),
                 _FilterChip(
                   label: 'both',
                   selected: f.travelers == 'all',
@@ -143,7 +152,7 @@ class _FilterBar extends StatelessWidget {
                   selected: f.travelers == 'friend',
                   onTap: () => prov.updateFilters(f.copyWith(travelers: 'friend')),
                 ),
-                const SizedBox(width: 12),
+                const _VSep(),
                 _FilterChip(
                   label: 'unpaid',
                   selected: f.paidBy == 'unpaid',
@@ -182,14 +191,25 @@ class _FilterChip extends StatelessWidget {
   );
 }
 
-// ── Summary toggle + panel ─────────────────────────────────────────────────────
-
-class _SummaryToggle extends StatefulWidget {
+class _VSep extends StatelessWidget {
+  const _VSep();
   @override
-  State<_SummaryToggle> createState() => _SummaryToggleState();
+  Widget build(BuildContext context) => Container(
+    width: 1,
+    height: 14,
+    margin: const EdgeInsets.only(left: 4, right: 10),
+    color: AppColors.border,
+  );
 }
 
-class _SummaryToggleState extends State<_SummaryToggle> {
+// ── Expenses toggle + panel ────────────────────────────────────────────────────
+
+class _ExpensesToggle extends StatefulWidget {
+  @override
+  State<_ExpensesToggle> createState() => _ExpensesToggleState();
+}
+
+class _ExpensesToggleState extends State<_ExpensesToggle> {
   bool _open = false;
 
   @override
@@ -198,6 +218,7 @@ class _SummaryToggleState extends State<_SummaryToggle> {
     final summary = prov.summary;
 
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         GestureDetector(
           onTap: () => setState(() => _open = !_open),
@@ -206,14 +227,16 @@ class _SummaryToggleState extends State<_SummaryToggle> {
             color: AppColors.surface2,
             child: Row(
               children: [
-                Text('summary', style: AppTextStyles.label(size: 10, color: AppColors.textTiny)),
+                Text('expenses', style: AppTextStyles.label(size: 10, color: AppColors.textTiny)),
                 const Spacer(),
                 if (summary != null) ...[
                   Text(
-                    '${summary.perPerson.peter.totalDKK.toStringAsFixed(0)} / ${summary.perPerson.friend.totalDKK.toStringAsFixed(0)} DKK',
+                    'P ${summary.perPerson.peter.totalDKK.toStringAsFixed(0)}'
+                    '  •  '
+                    '${kFriendName[0]} ${summary.perPerson.friend.totalDKK.toStringAsFixed(0)} DKK',
                     style: AppTextStyles.mono11(color: AppColors.textFaint),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                 ],
                 Icon(_open ? Icons.expand_less : Icons.expand_more,
                     size: 14, color: AppColors.textTiny),
@@ -221,21 +244,19 @@ class _SummaryToggleState extends State<_SummaryToggle> {
             ),
           ),
         ),
-        if (_open && summary != null) _SummaryPanel(summary: summary),
+        if (_open && summary != null) _ExpensesPanel(summary: summary),
       ],
     );
   }
 }
 
-class _SummaryPanel extends StatelessWidget {
+class _ExpensesPanel extends StatelessWidget {
   final SummaryData summary;
-  const _SummaryPanel({required this.summary});
+  const _ExpensesPanel({required this.summary});
 
   @override
   Widget build(BuildContext context) {
     final s = summary;
-    final settlement = s.settlement;
-
     return Container(
       color: AppColors.surface2,
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -251,29 +272,6 @@ class _SummaryPanel extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          if (settlement.netOutstandingDKK.abs() > 0.5) ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.accent.withOpacity(0.06),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.accent.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Text('settlement', style: AppTextStyles.label(size: 9, color: AppColors.textTiny)),
-                  const Spacer(),
-                  Text(
-                    '${settlement.peterOwes ? 'Peter' : kFriendName} owes '
-                    '${settlement.netOutstandingDKK.abs().toStringAsFixed(0)} DKK'
-                    '${settlement.approx ? ' ~' : ''}',
-                    style: AppTextStyles.mono11(color: AppColors.accent),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
           Text('breakdown', style: AppTextStyles.label(size: 9, color: AppColors.textTiny)),
           const SizedBox(height: 8),
           ...kTypes.where((t) => s.collective.byType.containsKey(t['id'])).map((t) {
@@ -326,6 +324,136 @@ class _PersonTotal extends StatelessWidget {
       ),
     ],
   );
+}
+
+// ── Settlement toggle + panel ──────────────────────────────────────────────────
+
+class _SettlementToggle extends StatefulWidget {
+  @override
+  State<_SettlementToggle> createState() => _SettlementToggleState();
+}
+
+class _SettlementToggleState extends State<_SettlementToggle> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = context.watch<AppProvider>();
+    final summary = prov.summary;
+    if (summary == null) return const SizedBox.shrink();
+
+    final settlement = summary.settlement;
+    final hasDebt = settlement.netOutstandingDKK.abs() > 0.5;
+    final debtLabel = hasDebt
+        ? '${settlement.peterOwes ? 'Peter' : kFriendName} owes '
+          '${settlement.netOutstandingDKK.abs().toStringAsFixed(0)} DKK'
+          '${settlement.approx ? ' ~' : ''}'
+        : 'all settled ✓';
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          onTap: () => setState(() => _open = !_open),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: const BoxDecoration(
+              color: AppColors.surface2,
+              border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+            ),
+            child: Row(
+              children: [
+                Text('settlement', style: AppTextStyles.label(size: 10, color: AppColors.textTiny)),
+                const Spacer(),
+                Text(
+                  debtLabel,
+                  style: AppTextStyles.mono11(color: hasDebt ? AppColors.accent : AppColors.green),
+                ),
+                const SizedBox(width: 6),
+                Icon(_open ? Icons.expand_less : Icons.expand_more,
+                    size: 14, color: AppColors.textTiny),
+              ],
+            ),
+          ),
+        ),
+        if (_open) _SettlementPanel(summary: summary),
+      ],
+    );
+  }
+}
+
+class _SettlementPanel extends StatelessWidget {
+  final SummaryData summary;
+  const _SettlementPanel({required this.summary});
+
+  @override
+  Widget build(BuildContext context) {
+    final s = summary.settlement;
+    final settled = s.netSettledDKK.abs();
+    final outstanding = s.netOutstandingDKK.abs();
+
+    return Container(
+      color: AppColors.surface2,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Divider(color: AppColors.border),
+          if (settled > 0.5)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 5),
+              child: Row(
+                children: [
+                  Text('settled', style: AppTextStyles.mono11(color: AppColors.textMuted)),
+                  const Spacer(),
+                  Text('${settled.toStringAsFixed(0)} DKK',
+                      style: AppTextStyles.mono11(color: AppColors.green)),
+                ],
+              ),
+            ),
+          if (outstanding > 0.5)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  Text('outstanding', style: AppTextStyles.mono11(color: AppColors.textMuted)),
+                  const Spacer(),
+                  Text(
+                    '${outstanding.toStringAsFixed(0)} DKK${s.approx ? ' ~' : ''}',
+                    style: AppTextStyles.mono11(color: AppColors.accent),
+                  ),
+                ],
+              ),
+            ),
+          if (s.byType.isNotEmpty) ...[
+            Text('by type', style: AppTextStyles.label(size: 9, color: AppColors.textTiny)),
+            const SizedBox(height: 6),
+            ...kTypes.where((t) => s.byType.containsKey(t['id'])).map((t) {
+              final ts = s.byType[t['id']]!;
+              if (ts.outstandingDKK.abs() < 0.5) return const SizedBox.shrink();
+              final arrow = ts.peterOwes ? 'P→${kFriendName[0]}' : '${kFriendName[0]}→P';
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Text('${t['icon']} ${t['label']}',
+                        style: AppTextStyles.mono11(color: AppColors.textMuted)),
+                    const Spacer(),
+                    Text(arrow, style: AppTextStyles.label(size: 9, color: AppColors.textTiny)),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${ts.outstandingDKK.abs().toStringAsFixed(0)} DKK${ts.approx ? ' ~' : ''}',
+                      style: AppTextStyles.mono11(color: AppColors.textFaint),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 // ── Grouped list ───────────────────────────────────────────────────────────────

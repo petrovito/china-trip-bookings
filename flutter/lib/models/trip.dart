@@ -12,6 +12,11 @@ class TripResponse {
         .map((i) => TripItem.fromJson(i as Map<String, dynamic>))
         .toList(),
   );
+
+  Map<String, dynamic> toJson() => {
+    'today': today,
+    'timeline': timeline.map((i) => i.toJson()).toList(),
+  };
 }
 
 class TripItem {
@@ -26,6 +31,12 @@ class TripItem {
     booking: j['booking'] != null ? Booking.fromJson(j['booking'] as Map<String, dynamic>) : null,
     segment: j['segment'] != null ? TripSegment.fromJson(j['segment'] as Map<String, dynamic>) : null,
   );
+
+  Map<String, dynamic> toJson() => {
+    'kind': kind,
+    if (booking != null) 'booking': booking!.toJson(),
+    if (segment != null) 'segment': segment!.toJson(),
+  };
 }
 
 class TripSegment {
@@ -76,6 +87,22 @@ class TripSegment {
         .toList(),
     todos: j['todos'] as List? ?? [],
   );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'location': location,
+    'sort_order': sortOrder,
+    if (startDate != null) 'start_date': startDate,
+    if (endDate != null) 'end_date': endDate,
+    if (displayEndDate != null) 'display_end_date': displayEndDate,
+    'is_past': isPast,
+    'is_active': isActive,
+    'missing_hotel': missingHotel,
+    'missing_transport_next': missingTransportNext,
+    if (hotel != null) 'hotel': hotel!.toJson(),
+    'days': days.map((d) => d.toJson()).toList(),
+    'todos': todos,
+  };
 }
 
 class TripDay {
@@ -102,6 +129,14 @@ class TripDay {
     food:          TripDayGroup.fromJson(j['food'] as Map<String, dynamic>? ?? {}),
     cityTransport: TripDayGroup.fromJson(j['city_transport'] as Map<String, dynamic>? ?? {}),
   );
+
+  Map<String, dynamic> toJson() => {
+    'date': date,
+    'is_today': isToday,
+    'other_bookings': otherBookings.map((b) => b.toJson()).toList(),
+    'food': food.toJson(),
+    'city_transport': cityTransport.toJson(),
+  };
 }
 
 class TripDayGroup {
@@ -118,4 +153,10 @@ class TripDayGroup {
         .map((b) => Booking.fromJson(b as Map<String, dynamic>))
         .toList(),
   );
+
+  Map<String, dynamic> toJson() => {
+    'count': count,
+    'summary': summary,
+    'items': items.map((b) => b.toJson()).toList(),
+  };
 }

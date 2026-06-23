@@ -17,7 +17,6 @@ class BookingCard extends StatelessWidget {
     final b = booking;
     final color = AppColors.typeColor(b.type);
     final isExpanded = prov.isCardExpanded(b.id);
-    final isPast = (b.date ?? '').compareTo(prov.trip?.today ?? '') < 0;
     final dimmed = !b.isPaid;
 
     return Opacity(
@@ -102,6 +101,20 @@ class _ExpandedSection extends StatelessWidget {
   final AppProvider prov;
   const _ExpandedSection({required this.booking, required this.prov});
 
+  Future<void> _copyInfo() async {
+    final b = booking;
+    final lines = <String>[if (b.name != null) b.name!];
+    if (b.date != null) lines.add(fmtDateFull(b.date));
+    if (b.time != null) lines.add(b.timeEnd != null ? '${b.time} → ${b.timeEnd}' : b.time!);
+    if (b.origin != null) lines.add('from: ${b.origin!}');
+    if (b.location != null) lines.add('to: ${b.location!}');
+    if (b.mapQuery != null) lines.add('📍 ${b.mapQuery!}');
+    if (b.reference != null) lines.add('ref: ${b.reference!}');
+    if (b.notes != null && b.notes!.isNotEmpty) lines.add(b.notes!);
+    await Clipboard.setData(ClipboardData(text: lines.join('\n')));
+    prov.showToast('Info copied');
+  }
+
   @override
   Widget build(BuildContext context) {
     final b = booking;
@@ -116,7 +129,7 @@ class _ExpandedSection extends StatelessWidget {
         if (b.location != null)
           _Row(label: 'to', value: b.location!),
         if (b.travelers != null)
-          _Row(label: 'who', value: b.travelers == 'both' ? 'Peter + ${kFriendName}' : b.travelers!),
+          _Row(label: 'who', value: b.travelers == 'both' ? 'Peter + $kFriendName' : b.travelers!),
         if (b.paidBy != null)
           _Row(label: 'paid', value: b.paidBy == 'peter' ? 'Peter' : kFriendName),
         if (b.platform != null)
@@ -143,9 +156,17 @@ class _ExpandedSection extends StatelessWidget {
             ),
           ),
         const SizedBox(height: 8),
-        // Action row
-        Row(
+        // Action row — Wrap prevents overflow on narrow screens
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
           children: [
+            // Copy full booking info (name, date, time, ref, address, notes)
+            _SmBtn(
+              label: '📋 info',
+              onTap: _copyInfo,
+            ),
+            // Open in maps app
             if (b.hasMap)
               _SmBtn(
                 label: '📍 maps',
@@ -163,24 +184,21 @@ class _ExpandedSection extends StatelessWidget {
                   }
                 },
               ),
-            if (b.mapQuery != null) ...[
-              const SizedBox(width: 6),
+            // Copy Chinese address for taxi / navigation
+            if (b.mapQuery != null)
               _SmBtn(
-                label: '⎘ copy',
+                label: '⎘ location',
                 onTap: () async {
                   await Clipboard.setData(ClipboardData(text: b.mapQuery!));
                   prov.showToast('Address copied');
                 },
               ),
-            ],
             if (prov.canWrite) ...[
-              const Spacer(),
               _SmBtn(
                 label: b.settled ? '✓ settled' : 'settle',
                 accent: b.settled,
                 onTap: () => prov.settleBooking(b.id, b.settled),
               ),
-              const SizedBox(width: 6),
               _SmBtn(
                 label: 'del',
                 onTap: () => _confirmDelete(context, prov, b.id),
