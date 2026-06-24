@@ -110,6 +110,7 @@ var mcpTools = []mcpTool{
 				"notes":          {"type":"string"},
 				"travelers":      {"type":"string","enum":["peter","friend","both"]},
 				"paid_by":        {"type":"string","enum":["peter","friend"]},
+				"segment_id":     {"type":"string","description":"Segment UUID — override auto-resolution when location is ambiguous (e.g. duplicate city)"},
 				"map_query":      {"type":"string","description":"Full Chinese street address for Amap"},
 				"details":        {"type":"object","description":"Structured extras e.g. room, code, wifi"}
 			},
@@ -135,6 +136,7 @@ var mcpTools = []mcpTool{
 				"notes":     {"type":"string","description":"For city_transport prefix with [taxi]/[bus]/[metro]/[other]"},
 				"travelers": {"type":"string","enum":["peter","friend","both"]},
 				"paid_by":   {"type":"string","enum":["peter","friend"]},
+				"segment_id":{"type":"string","description":"Segment UUID — assign on insert; required when location is omitted"},
 				"map_query": {"type":"string","description":"Full Chinese street address or place name for Amap"},
 				"details":   {"type":"object","description":"Structured extras e.g. code, seat, gate"}
 			},
@@ -249,6 +251,7 @@ var mcpTools = []mcpTool{
 							"notes":       {"type":"string"},
 							"travelers":   {"type":"string"},
 							"paid_by":     {"type":"string"},
+							"segment_id":  {"type":"string","description":"Segment UUID — required for non-transit types when location is omitted"},
 							"map_query":   {"type":"string"},
 							"details":     {"type":"object"}
 						},
@@ -613,15 +616,16 @@ func mcpAddExperience(ctx context.Context, raw json.RawMessage) mcpToolResult {
 	if err := json.Unmarshal(raw, &req); err != nil {
 		return mcpErrf(err.Error())
 	}
+	hasLocation := req.Location != nil && strings.TrimSpace(*req.Location) != ""
+	hasSegment := req.SegmentID != nil && strings.TrimSpace(*req.SegmentID) != ""
+	if !hasLocation && !hasSegment {
+		return mcpErrf("location or segment_id is required — booking not created")
+	}
 	b, err := services.CreateBookingRecordForKind(ctx, "experience", req)
 	if err != nil {
 		return mcpErrf(err.Error())
 	}
-	msg := "Added experience:\n" + formatBooking(b)
-	if b.SegmentID == nil {
-		msg += "\n\n⚠️  No segment assigned — call assign_segment to link this to a city."
-	}
-	return mcpOK(msg)
+	return mcpOK("Added experience:\n" + formatBooking(b))
 }
 
 func mcpUpdateBooking(ctx context.Context, raw json.RawMessage) mcpToolResult {
@@ -706,6 +710,13 @@ func mcpBulkAddBookings(ctx context.Context, raw json.RawMessage) mcpToolResult 
 		}
 		if req.Type == nil || *req.Type == "" {
 			return mcpErrf("item %d: type is required", i+1)
+		}
+		if *req.Type != "flight" && *req.Type != "train" {
+			hasLocation := req.Location != nil && strings.TrimSpace(*req.Location) != ""
+			hasSegment := req.SegmentID != nil && strings.TrimSpace(*req.SegmentID) != ""
+			if !hasLocation && !hasSegment {
+				return mcpErrf("item %d [%s]: location or segment_id is required", i+1, *req.Type)
+			}
 		}
 		items = append(items, item{req: req, kind: kindForType(*req.Type)})
 	}

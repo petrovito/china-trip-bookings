@@ -96,6 +96,7 @@ type BookingRequest struct {
 	CheckInTime  *string `json:"check_in_time"`
 	CheckOutTime *string `json:"check_out_time"`
 
+	SegmentID        *string `json:"segment_id"`
 	Reminder         *bool   `json:"reminder"`
 	ReminderType     *string `json:"reminder_type"`
 	ReminderAssignee *string `json:"reminder_assignee"`
@@ -486,9 +487,19 @@ func UpdateBookingRecord(ctx context.Context, id uuid.UUID, req BookingRequest) 
 
 func CreateBookingRecordForKind(ctx context.Context, kind string, req BookingRequest) (*models.Booking, error) {
 	payload := BuildPayloadForKind(kind, req, nil, true)
-	segID, err := GetOrCreateSegment(ctx, payload.Type, payload.Location, payload.Date)
-	if err != nil {
-		return nil, err
+	var segID *uuid.UUID
+	if req.SegmentID != nil && *req.SegmentID != "" {
+		sid, parseErr := uuid.Parse(*req.SegmentID)
+		if parseErr != nil {
+			return nil, fmt.Errorf("invalid segment_id: %s", *req.SegmentID)
+		}
+		segID = &sid
+	} else {
+		var err error
+		segID, err = GetOrCreateSegment(ctx, payload.Type, payload.Location, payload.Date)
+		if err != nil {
+			return nil, err
+		}
 	}
 	payload.SegmentID = segID
 
