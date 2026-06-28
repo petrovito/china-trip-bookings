@@ -4,13 +4,13 @@ import '../models/booking.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
 
-/// Opens a scrollable bottom sheet listing every non-null field of [booking]
-/// with per-field copy buttons and a "copy all" header action.
 void showBookingDetails(
   BuildContext context,
   Booking booking,
   void Function(String) showToast,
 ) {
+  final details = booking.details;
+  if (details == null || details.isEmpty) return;
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
@@ -24,61 +24,20 @@ class _BookingDetailsSheet extends StatelessWidget {
   final void Function(String) showToast;
   const _BookingDetailsSheet({required this.booking, required this.showToast});
 
+  static String _label(String key) => key
+      .replaceAll('_peter', ' (P)')
+      .replaceAll('_friend', ' (K)')
+      .replaceAll('_', ' ');
+
   @override
   Widget build(BuildContext context) {
     final b = booking;
-    final fields = <(String, String)>[];
-
-    void add(String label, String? value) {
-      if (value != null && value.isNotEmpty) fields.add((label, value));
-    }
-
-    add('id', b.id);
-    add('type', b.type);
-    add('name', b.name);
-    if (b.date != null) {
-      add('date', b.dateEnd != null ? '${b.date} → ${b.dateEnd}' : b.date!);
-    }
-    if (b.time != null) {
-      add('time', b.timeEnd != null ? '${b.time} → ${b.timeEnd}' : b.time!);
-    }
-    add('from', b.origin);
-    add('to', b.location);
-    if (b.price != null) add('price', fmtPrice(b.price, b.currency));
-    add('platform', b.platform);
-    add('ref', b.reference);
-    add('notes', b.notes);
-    add('who', b.travelers == 'both'
-        ? 'Peter + $kFriendName'
-        : b.travelers == 'friend'
-            ? kFriendName
-            : 'Peter');
-    if (b.paidBy != null && b.paidBy!.isNotEmpty) {
-      add('paid', b.paidBy == 'peter' ? 'Peter' : kFriendName);
-    }
-    if (b.settled) add('settled', 'yes');
-    add('segment', b.segmentId);
-    add('map', b.mapQuery);
-    if (b.mapLat != null && b.mapLng != null) {
-      add('coords', '${b.mapLat}, ${b.mapLng}');
-    }
-    if (b.details != null) {
-      for (final e in b.details!.entries) {
-        final key = e.key
-            .replaceAll('_peter', ' (P)')
-            .replaceAll('_friend', ' (K)')
-            .replaceAll('_', ' ');
-        add(key, e.value?.toString());
-      }
-    }
-    for (final p in b.allPasses) {
-      add('pass (${p.who == 'peter' ? 'P' : 'K'})', p.code);
-    }
+    final entries = b.details!.entries.toList();
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.55,
-      maxChildSize: 0.92,
-      minChildSize: 0.25,
+      initialChildSize: 0.45,
+      maxChildSize: 0.85,
+      minChildSize: 0.2,
       builder: (_, controller) => Container(
         decoration: const BoxDecoration(
           color: AppColors.surface,
@@ -91,26 +50,22 @@ class _BookingDetailsSheet extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // Drag handle
             Center(
               child: Container(
                 margin: const EdgeInsets.only(top: 10, bottom: 12),
-                width: 36,
-                height: 3,
+                width: 36, height: 3,
                 decoration: BoxDecoration(
                   color: AppColors.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
               child: Row(
                 children: [
                   Container(
-                    width: 4,
-                    height: 14,
+                    width: 4, height: 14,
                     margin: const EdgeInsets.only(right: 8),
                     color: AppColors.typeColor(b.type),
                   ),
@@ -126,73 +81,58 @@ class _BookingDetailsSheet extends StatelessWidget {
                   const SizedBox(width: 8),
                   GestureDetector(
                     onTap: () async {
-                      final text =
-                          fields.map((f) => '${f.$1}: ${f.$2}').join('\n');
+                      final text = entries
+                          .map((e) => '${_label(e.key)}: ${e.value}')
+                          .join('\n');
                       await Clipboard.setData(ClipboardData(text: text));
                       showToast('All copied');
                     },
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 3),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         border: Border.all(color: AppColors.border),
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: Text(
-                        'copy all',
-                        style: AppTextStyles.mono11(color: AppColors.textFaint),
-                      ),
+                      child: Text('copy all', style: AppTextStyles.mono11(color: AppColors.textFaint)),
                     ),
                   ),
                 ],
               ),
             ),
             const Divider(height: 1, color: AppColors.border),
-            // Field rows
             Expanded(
               child: ListView.separated(
                 controller: controller,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                itemCount: fields.length,
-                separatorBuilder: (_, __) =>
-                    const Divider(height: 1, color: AppColors.border),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                itemCount: entries.length,
+                separatorBuilder: (_, __) => const Divider(height: 1, color: AppColors.border),
                 itemBuilder: (_, i) {
-                  final label = fields[i].$1;
-                  final value = fields[i].$2;
+                  final label = _label(entries[i].key);
+                  final value = entries[i].value?.toString() ?? '';
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 9),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         SizedBox(
-                          width: 72,
+                          width: 80,
                           child: Text(
                             label.toUpperCase(),
-                            style: AppTextStyles.label(
-                                size: 9, color: AppColors.textTiny),
+                            style: AppTextStyles.label(size: 9, color: AppColors.textTiny),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Expanded(
-                          child: SelectableText(
-                            value,
-                            style: AppTextStyles.mono12(),
-                          ),
+                          child: SelectableText(value, style: AppTextStyles.mono12()),
                         ),
                         const SizedBox(width: 8),
                         GestureDetector(
                           onTap: () async {
-                            await Clipboard.setData(
-                                ClipboardData(text: value));
+                            await Clipboard.setData(ClipboardData(text: value));
                             showToast('$label copied');
                           },
-                          child: const Icon(
-                            Icons.copy,
-                            size: 14,
-                            color: AppColors.textTiny,
-                          ),
+                          child: const Icon(Icons.copy, size: 14, color: AppColors.textTiny),
                         ),
                       ],
                     ),

@@ -161,10 +161,11 @@ class _ExpandedDetails extends StatelessWidget {
         // Action row
         Row(
           children: [
-            _LinkButton(
-              label: 'details',
-              onTap: () => showBookingDetails(context, b, prov.showToast),
-            ),
+            if (b.details != null && b.details!.isNotEmpty)
+              _LinkButton(
+                label: 'details',
+                onTap: () => showBookingDetails(context, b, prov.showToast),
+              ),
             if (b.hasMap) ...[
               const SizedBox(width: 6),
               _LinkButton(

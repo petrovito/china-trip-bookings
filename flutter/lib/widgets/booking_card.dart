@@ -162,10 +162,11 @@ class _ExpandedSection extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: [
-            _SmBtn(
-              label: 'details',
-              onTap: () => showBookingDetails(context, b, prov.showToast),
-            ),
+            if (b.details != null && b.details!.isNotEmpty)
+              _SmBtn(
+                label: 'details',
+                onTap: () => showBookingDetails(context, b, prov.showToast),
+              ),
             // Copy full booking info (name, date, time, ref, address, notes)
             _SmBtn(
               label: '📋 info',

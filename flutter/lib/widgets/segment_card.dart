@@ -437,18 +437,20 @@ class _HotelRow extends StatelessWidget {
           const Text('🏨', style: TextStyle(fontSize: 14)),
           const SizedBox(width: 8),
           Expanded(child: Text(b.name ?? '', style: AppTextStyles.body(size: 12))),
-          GestureDetector(
-            onTap: () => showBookingDetails(context, b, prov.showToast),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              margin: const EdgeInsets.only(left: 6),
-              decoration: BoxDecoration(
-                border: Border.all(color: AppColors.border),
-                borderRadius: BorderRadius.circular(4),
+          if (b.details != null && b.details!.isNotEmpty) ...[
+            GestureDetector(
+              onTap: () => showBookingDetails(context, b, prov.showToast),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                margin: const EdgeInsets.only(left: 6),
+                decoration: BoxDecoration(
+                  border: Border.all(color: AppColors.border),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text('details', style: AppTextStyles.mono11(color: AppColors.textFaint)),
               ),
-              child: Text('details', style: AppTextStyles.mono11(color: AppColors.textFaint)),
             ),
-          ),
+          ],
           if (b.hasMap) ...[
             const SizedBox(width: 6),
             GestureDetector(
