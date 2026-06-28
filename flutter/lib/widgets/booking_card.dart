@@ -6,6 +6,7 @@ import '../models/booking.dart';
 import '../providers/app_provider.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
+import 'booking_details_sheet.dart';
 
 class BookingCard extends StatelessWidget {
   final Booking booking;
@@ -161,6 +162,10 @@ class _ExpandedSection extends StatelessWidget {
           spacing: 6,
           runSpacing: 6,
           children: [
+            _SmBtn(
+              label: 'details',
+              onTap: () => showBookingDetails(context, b, prov.showToast),
+            ),
             // Copy full booking info (name, date, time, ref, address, notes)
             _SmBtn(
               label: '📋 info',

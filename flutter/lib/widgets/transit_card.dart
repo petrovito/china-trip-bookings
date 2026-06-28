@@ -8,6 +8,7 @@ import '../config.dart';
 import '../theme/app_theme.dart';
 import 'pass_viewer.dart';
 import 'identity_picker.dart';
+import 'booking_details_sheet.dart';
 
 class TransitCard extends StatelessWidget {
   final Booking booking;
@@ -160,7 +161,12 @@ class _ExpandedDetails extends StatelessWidget {
         // Action row
         Row(
           children: [
-            if (b.hasMap)
+            _LinkButton(
+              label: 'details',
+              onTap: () => showBookingDetails(context, b, prov.showToast),
+            ),
+            if (b.hasMap) ...[
+              const SizedBox(width: 6),
               _LinkButton(
                 label: '📍 maps',
                 onTap: () async {
@@ -178,6 +184,7 @@ class _ExpandedDetails extends StatelessWidget {
                   }
                 },
               ),
+            ],
             if (b.mapQuery != null) ...[
               const SizedBox(width: 6),
               _LinkButton(
