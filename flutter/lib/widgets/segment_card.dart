@@ -8,6 +8,7 @@ import '../models/summary.dart';
 import '../providers/app_provider.dart';
 import '../config.dart';
 import '../theme/app_theme.dart';
+import 'booking_details_sheet.dart';
 
 class SegmentCard extends StatefulWidget {
   final TripSegment segment;
@@ -422,6 +423,7 @@ class _HotelRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final b = hotel;
+    final prov = context.read<AppProvider>();
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       padding: const EdgeInsets.all(10),
@@ -435,7 +437,20 @@ class _HotelRow extends StatelessWidget {
           const Text('🏨', style: TextStyle(fontSize: 14)),
           const SizedBox(width: 8),
           Expanded(child: Text(b.name ?? '', style: AppTextStyles.body(size: 12))),
-          if (b.hasMap)
+          GestureDetector(
+            onTap: () => showBookingDetails(context, b, prov.showToast),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              margin: const EdgeInsets.only(left: 6),
+              decoration: BoxDecoration(
+                border: Border.all(color: AppColors.border),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text('details', style: AppTextStyles.mono11(color: AppColors.textFaint)),
+            ),
+          ),
+          if (b.hasMap) ...[
+            const SizedBox(width: 6),
             GestureDetector(
               onTap: () async {
                 final url = webMapsLink(b.toJson());
@@ -443,8 +458,9 @@ class _HotelRow extends StatelessWidget {
                   await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
                 }
               },
-              child: Text('📍', style: const TextStyle(fontSize: 13)),
+              child: const Text('📍', style: TextStyle(fontSize: 13)),
             ),
+          ],
         ],
       ),
     );
